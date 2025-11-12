@@ -1,0 +1,149 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>入退室 記録ページ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;margin:20px;background:#f7f7fb;}
+h1{font-size:20px;margin:0 0 12px;}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px;}
+label{display:block;font-size:12px;color:#555;margin:8px 0 4px;}
+input,select,button{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer}
+button:hover{filter:brightness(.95)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.table{width:100%;border-collapse:collapse;margin-top:10px}
+.table th,table td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}
+.badge.in{background:#e7f3ff;color:#1253c8}
+.badge.out{background:#ffefe7;color:#9a3c00}
+.flash{background:#fff3cd;border:1px solid #ffeeba;border-radius:8px;padding:10px;margin-bottom:12px}
+.small{font-size:12px;color:#666}
+</style>
+<script>
+function onStudentChange(sel){
+  const opt = sel.selectedOptions[0];
+  if(!opt) return;
+  document.getElementById('student_no').value = opt.dataset.no || '';
+  document.getElementById('student_name').value = opt.dataset.name || '';
+  document.getElementById('gakka_id').value = opt.dataset.gakka || '';
+}
+</script>
+</head>
+<body>
+
+<h1>入退室 記録ページ</h1>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="flash">
+    {% for m in messages %}{{m}}<br>{% endfor %}
+  </div>
+  {% endif %}
+{% endwith %}
+
+<div class="card">
+  <form method="post" action="{{ url_for('submit') }}">
+    <div class="grid">
+      <div>
+        <label>学生を選択（学科 / 学生番号 / 生徒名）</label>
+        <select onchange="onStudentChange(this)">
+          <option value="">-- 選択してください --</option>
+          {% for s in students %}
+          <option value="{{s['学生番号']}}" data-no="{{s['学生番号']}}" data-name="{{s['生徒名']}}" data-gakka="{{s['学科ID']}}">
+            [{{s['学科名']}}] {{s['学生番号']}} : {{s['生徒名']}}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>（任意）時刻指定</label>
+        <input type="datetime-local" name="ts_local" step="1">
+        <div class="small">未指定なら現在時刻が入ります</div>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:8px">
+      <div><label>学生番号</label><input id="student_no" name="student_no" required></div>
+      <div><label>生徒名（マスタ上書き表示のみ）</label><input id="student_name" name="student_name" readonly></div>
+    </div>
+
+    <div class="grid" style="margin-top:8px">
+      <div>
+        <label>学科</label>
+        <select id="gakka_id" name="gakka_id" required>
+          {% for g in gakkas %}
+            <option value="{{ g['学科ID'] }}">{{ g['学科名'] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label style="visibility:hidden">submit</label>
+        <button type="submit">入退室を記録（自動判定）</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- 1～4限の時間 -->
+<div class="card">
+  <h2 style="font-size:16px;margin:0 0 8px;">1～4限の時間</h2>
+  <table class="table">
+    <thead>
+      <tr><th>時限</th><th>開始</th><th>終了</th><th>備考</th></tr>
+    </thead>
+    <tbody>
+      {% for r in tt_1to4 %}
+      <tr>
+        <td>{{ r['時限'] }}</td>
+        <td>{{ r['開始時刻'] }}</td>
+        <td>{{ r['終了時刻'] }}</td>
+        <td>
+          {# 備考が必要なら別クエリ or JOIN。簡易表示のため空欄 #}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 直近の入退室ログ -->
+<div class="card">
+  <h2 style="font-size:16px;margin:0 0 8px;">直近ログ</h2>
+  <table class="table">
+    <thead><tr><th>記録ID</th><th>学科</th><th>学生番号</th><th>生徒名</th><th>入退出時間</th><th>区分</th><th>出席状態</th></tr></thead>
+    <tbody>
+      {% for r in logs %}
+      <tr>
+        <td>{{ r['記録ID'] }}</td>
+        <td>{{ r['学科名'] }}（{{ r['学科ID'] }}）</td>
+        <td>{{ r['学生番号'] }}</td>
+        <td>{{ r['生徒名'] }}</td>
+        <td>{{ r['入退出時間'] }}</td>
+        <td>{% if r['入室区分']=='入室' %}<span class="badge in">入室</span>{% else %}<span class="badge out">退出</span>{% endif %}</td>
+        <td>{{ r['出席状態'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ログページに飛べるリンク -->
+<div class="card">
+  <a href="{{ url_for('logs') }}" style="display:block; text-align:center; background-color:#2f6feb; color:white; padding:10px; border-radius:8px; text-decoration:none;">
+    ログページへ移動
+  </a>
+</div>
+
+<!-- 個人別サマリーに飛べるリンク（追加） -->
+<div class="card">
+  <a href="{{ url_for('summary') }}" style="display:block; text-align:center; background-color:#2f6feb; color:white; padding:10px; border-radius:8px; text-decoration:none;">
+    個人別出席状況サマリーへ
+  </a>
+</div>
+
+<div class="small">DB: {{ db_path }}</div>
+</body>
+</html>
+"""

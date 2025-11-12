@@ -1,0 +1,90 @@
+﻿<!doctype html><meta charset="utf-8"><title>科目別出席率</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+.toolbar{display:flex;gap:12px;flex-wrap:wrap}
+select{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
+th,td{padding:10px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
+th{background:#66bb6a;color:#fff}
+tr:nth-child(even) td{background:#f1f8e9}
+tr:nth-child(odd)  td{background:#e8f5e9}
+.rate{font-weight:700}
+.small{color:#666;font-size:12px}
+.btn{display:inline-block;padding:6px 10px;background:#2f6feb;color:#fff;border-radius:8px;text-decoration:none}
+.btn:hover{filter:brightness(.95)}
+.progress-bar-container{height:10px;background:#e5e7eb;border-radius:9999px;overflow:hidden;margin-top:5px}
+.progress-bar{height:100%;background:#4caf50;width:0%;border-radius:9999px}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-left:6px}
+.badge.gray{background:#ececec;color:#555}
+</style>
+
+<div class="card">
+  <h1 style="margin:0 0 12px">科目別出席率（{{student_name}} / {{term_label}}）</h1>
+  <form class="toolbar" method="get">
+    <div>
+      <label>期</label>
+      <select name="term" onchange="this.form.submit()">
+        {% for t in terms %}
+          <option value="{{t['期ID']}}" {{'selected' if t['期ID']==term else ''}}>{{t['期名']}}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>学生</label>
+      <select name="student_key" onchange="this.form.submit()">
+        {% for s in students %}
+          {% set key = s['学生番号'] ~ '-' ~ s['学科ID'] %}
+          <option value="{{key}}" {{'selected' if key==request.args.get('student_key') else ''}}>
+            [{{s['学科名']}}] {{s['学生番号']}} : {{s['生徒名']}}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+  <div class="small">※「総回数」は今日より前の授業日のみ。今日以降の未記入は欠席にカウントしません。</div>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>科目</th><th>教員</th><th>教室例</th>
+        <th>出席</th><th>遅刻</th><th>欠席</th><th>未記入</th>
+        <th>総回数</th><th>必要出席回数</th><th>出席率</th><th>詳細</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set 出席率 = r['出席率'] %}
+      <tr>
+        <td>{{r['科目名']}}</td>
+        <td>{{r['教員名']}}</td>
+        <td>{{r['教室例']}}</td>
+        <td>{{r['出席']}}</td>
+        <td>{{r['遅刻']}}</td>
+        <td>{{r['欠席']}}</td>
+        <td>{{r['未記入']}} <span class="badge gray">今日以降</span></td>
+        <td>{{r['総回数']}}</td>
+        <td>{{r['必要出席回数']}}</td>
+        <td class="rate">{{"%.1f%%" % 出席率}}</td>
+        <td>
+          <a class="btn" href="{{ url_for('absent_reason', term=term, student_key=request.args.get('student_key'), subject_id=r['科目ID']) }}">
+            詳細を見る
+          </a>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="11">
+          <div class="progress-bar-container">
+            <div class="progress-bar" style="width: {{出席率}}%;"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if rows|length == 0 %}
+      <tr><td colspan="11" class="small">該当データがありません。</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

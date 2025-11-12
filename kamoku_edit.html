@@ -1,0 +1,89 @@
+﻿<!doctype html>
+<meta charset="utf-8"><title>授業科目の編集</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+h1{margin:0 0 12px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
+th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+th{background:#eef3ff}
+input,select,button,textarea{padding:8px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer}
+button:hover{filter:brightness(.95)}
+form.inline{display:inline}
+.flex{display:flex;gap:10px;flex-wrap:wrap}
+.small{color:#666;font-size:12px}
+</style>
+
+<div class="card">
+  <h1>授業科目の編集</h1>
+  <a href="{{ url_for('kamoku') }}" class="small">← 科目一覧に戻る</a>
+</div>
+
+<div class="card">
+  <h2 style="margin:0 0 8px">新規追加</h2>
+  <form method="post" action="{{ url_for('kamoku_add') }}" class="flex">
+    <div>
+      <label>授業科目名</label><br>
+      <input name="name" required style="min-width:280px">
+    </div>
+    <div>
+      <label>学科</label><br>
+      <select name="gakka_id" required>
+        {% for g in gakkas %}
+          <option value="{{ g['学科ID'] }}">{{ g['学科名'] }}（ID:{{ g['学科ID'] }}）</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>単位</label><br>
+      <input name="unit" type="number" min="0" value="1" style="width:90px">
+    </div>
+    <div style="flex:1 1 320px">
+      <label>備考</label><br>
+      <input name="note" placeholder="担当者など任意で">
+    </div>
+    <div style="align-self:flex-end">
+      <button type="submit">追加</button>
+    </div>
+  </form>
+  <div class="small" style="margin-top:6px">※ IDは空欄でOK。自動で次番号（MAX+1）を採番します。</div>
+</div>
+
+<div class="card">
+  <h2 style="margin:0 0 8px">登録済み科目</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:80px">科目ID</th>
+        <th>授業科目名</th>
+        <th style="width:160px">学科</th>
+        <th style="width:80px">単位</th>
+        <th>備考</th>
+        <th style="width:200px">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in subjects %}
+      <tr>
+        <td>{{ r['授業科目ID'] }}</td>
+        <td>{{ r['授業科目名'] }}</td>
+        <td>{{ r['学科名'] or ('学科ID:' ~ r['科目学科ID']) }}</td>
+        <td>{{ r['単位'] }}</td>
+        <td>{{ r['備考'] or '' }}</td>
+        <td>
+          <form class="inline" method="get" action="{{ url_for('kamoku_edit_form', subject_id=r['授業科目ID']) }}">
+            <button type="submit">編集</button>
+          </form>
+          <form class="inline" method="post" action="{{ url_for('kamoku_delete', subject_id=r['授業科目ID']) }}" onsubmit="return confirm('削除しますか？');">
+            <button type="submit" style="background:#f44336">削除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if subjects|length == 0 %}
+      <tr><td colspan="6">登録がありません。</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

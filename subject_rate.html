@@ -1,0 +1,34 @@
+﻿<!doctype html><meta charset="utf-8"><title>科目別出席率</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+select,button{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer}
+.small{color:#666;font-size:12px}
+</style>
+<div class="card">
+  <h1 style="margin:0 0 12px">科目別出席率</h1>
+  <form method="get">
+    <div class="grid">
+      <div>
+        <label>期</label>
+        <select name="term">
+          {% for t in terms %}
+            <option value="{{t['期ID']}}">{{t['期名']}}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>学生（学科 / 番号 / 氏名）</label>
+        <select name="student_key" required>
+          {% for s in students %}
+            <option value="{{s['学生番号']}}-{{s['学科ID']}}">[{{s['学科名']}}] {{s['学生番号']}} : {{s['生徒名']}}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:8px"><button type="submit">集計する</button></div>
+  </form>
+  <div class="small" style="margin-top:8px">※必要出席回数は総回数の80％（小数切り上げ）。</div>
+</div>

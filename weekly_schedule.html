@@ -1,0 +1,49 @@
+﻿<!doctype html>
+    <html lang="ja">
+    <head>
+      <meta charset="utf-8">
+      <title>週時間割一覧</title>
+      <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; background: #f7f7fb; }
+        h1 { font-size: 20px; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+        th, td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }
+        th { background: #eef3ff; }
+        tr:hover td { background: #fafafa; }
+        .btn { display: inline-block; padding: 8px 12px; background: #2f6feb; color: white; border-radius: 8px; margin-top: 10px; text-decoration: none; }
+        .btn:hover { filter: brightness(0.95); }
+      </style>
+    </head>
+    <body>
+      <h1>週時間割一覧</h1>
+      <table>
+        <thead>
+          <tr>
+            <th>年度</th>
+            <th>学科ID</th>
+            <th>期</th>
+            <th>曜日</th>
+            <th>時限</th>
+            <th>授業科目</th>
+            <th>教室</th>
+            <th>備考</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r['年度'] }}</td>
+            <td>{{ r['学科ID'] }}</td>
+            <td>{{ r['期名'] }}</td>
+            <td>{{ r['曜日名'] }}</td>
+            <td>{{ r['時限'] }}</td>
+            <td>{{ r['科目名'] }}</td>
+            <td>{{ r['教室名'] }}</td>
+            <td>{{ r['備考'] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <a class="btn" href="{{ url_for('index') }}">← トップページへ戻る</a>
+    </body>
+    </html>

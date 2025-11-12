@@ -1,0 +1,101 @@
+﻿<!doctype html>
+<meta charset="utf-8">
+<title>欠席理由の登録</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{padding:8px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
+th{background:#eef3ff}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#e7f3ff;color:#1253c8}
+.small{color:#666;font-size:12px}
+input[type="text"]{width:100%;box-sizing:border-box;padding:8px;border:1px solid #ddd;border-radius:8px}
+button{padding:10px 14px;border:0;background:#2f6feb;color:#fff;border-radius:8px;cursor:pointer}
+button:hover{filter:brightness(.95)}
+fieldset{border:0;padding:0;margin:0}
+.reason-wrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+label.inline{display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border-radius:8px;border:1px solid #e5e7eb;background:#fafafa;cursor:pointer}
+tr:nth-child(even) td{background:#fafbff}
+</style>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <h1 style="margin:0;font-size:18px;">欠席理由の登録</h1>
+    <a href="{{ url_for('subject_rate', term=term, student_key=student_key) }}" class="small">← 科目別出席率へ戻る</a>
+  </div>
+  <div class="small" style="margin-top:6px">
+    学生: <span class="badge">{{student_name}}</span> ／ 学科ID: {{gakka_id}} ／ 科目: <span class="badge">{{subject_name}}</span> ／ 期: {{term_label}}
+  </div>
+</div>
+
+<div class="card">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div style="background:#fff3cd;border:1px solid #ffeeba;border-radius:8px;padding:10px;margin-bottom:10px">
+        {% for m in messages %}{{m}}<br>{% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% if absent_dates %}
+  <form method="post">
+    <table class="table">
+      <thead>
+        <tr><th style="width:140px">日付</th><th>理由</th><th style="width:260px">その他（選択時のみ）</th></tr>
+      </thead>
+      <tbody>
+        {% for d in absent_dates %}
+        {% set pre = preset.get(d, {}) %}
+        {% set pre_reason = pre.get('理由区分','') %}
+        {% set pre_other = pre.get('その他理由','') %}
+        <tr>
+          <td>{{ d }}</td>
+          <td>
+            <fieldset class="reason-wrap">
+              {% for r in ['病欠','公欠','寝坊','その他'] %}
+                <label class="inline">
+                  <input type="radio" name="reason[{{d}}]" value="{{r}}" {% if pre_reason==r %}checked{% endif %} onclick="toggleOther('{{d}}', this.value)">
+                  {{ r }}
+                </label>
+              {% endfor %}
+            </fieldset>
+          </td>
+          <td>
+            <input type="text" name="other[{{d}}]" id="other_{{d}}" value="{{ pre_other }}" placeholder="例: 通院 / 家事都合 / 交通遅延 など">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="margin-top:12px">
+      <button type="submit">保存する</button>
+      <a class="small" style="margin-left:10px" href="{{ url_for('subject_rate', term=term, student_key=student_key) }}">キャンセル</a>
+    </div>
+  </form>
+  {% else %}
+    <div class="small">この科目に未登録の欠席日はありません。</div>
+  {% endif %}
+</div>
+
+<script>
+function toggleOther(day, value){
+  const el = document.getElementById('other_'+day);
+  if(!el) return;
+  el.disabled = (value !== 'その他');
+  if (value !== 'その他') {
+    // その他でなければ入力を残してもOK。消したいなら下行を有効化。
+    // el.value = '';
+  } else {
+    el.focus();
+  }
+}
+// 初期状態のdisable制御
+document.addEventListener('DOMContentLoaded', () => {
+  {% for d in absent_dates %}
+    const radios = document.getElementsByName('reason[{{d}}]');
+    let selected = '';
+    for (const r of radios){ if(r.checked) { selected = r.value; break; } }
+    toggleOther('{{d}}', selected);
+  {% endfor %}
+});
+</script>

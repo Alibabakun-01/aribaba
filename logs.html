@@ -1,0 +1,131 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ログページ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+    margin: 20px;
+    background: #f7f7fb;
+}
+h1 { font-size: 20px; margin: 0 0 12px; }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, .06); padding: 16px; margin-bottom: 16px; }
+.table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.table th, .table td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; font-size: 13px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge.in { background-color: #cce5ff; color: #004085; }
+.badge.out { background-color: #f8d7da; color: #721c24; }
+button {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s ease-in-out;
+    margin-bottom: 10px;
+}
+
+/* デフォルトのボタンの色（緑系） */
+button {
+    background-color: #66bb6a;
+    color: white;
+}
+
+button:hover {
+    background-color: #81c784;  /* ホバー時の色（明るい緑） */
+    transform: scale(1.03); /* 少し拡大して効果を加える */
+}
+
+button:active {
+    background-color: #388e3c; /* クリック時の色（濃い緑） */
+    transform: scale(1.02); /* クリック時の縮小 */
+}
+
+/* 削除ボタンの色（赤系） */
+button.danger {
+    background-color: #f44336;
+}
+
+button.danger:hover {
+    background-color: #e53935;
+}
+
+button.danger:active {
+    background-color: #c62828;
+}
+
+.toolbar { display: flex; gap: 16px; flex-wrap: wrap; }
+.small { font-size: 12px; color: #666; }
+</style>
+</head>
+<body>
+
+<h1>ログページ</h1>
+
+<!-- CSVダウンロードセクション -->
+<div class="card">
+  <div class="toolbar">
+    <form method="get" action="{{ url_for('download_csv') }}">
+      <input type="hidden" name="start" value="{{ today }}">
+      <input type="hidden" name="end" value="{{ today }}">
+      <button type="submit">今日分CSVをダウンロード</button>
+    </form>
+    <form method="get" action="{{ url_for('download_csv') }}">
+      <button type="submit">全件CSVをダウンロード</button>
+    </form>
+    <form method="post" action="{{ url_for('reset_logs') }}" onsubmit="return confirm('本当に全ての入退室ログを削除しますか？');">
+      <button type="submit" class="danger">入退室ログを全削除（リセット）</button>
+    </form>
+    <form method="post" action="{{ url_for('reset_camlogs') }}" onsubmit="return confirm('本当に全てのカメラログを削除しますか？');">
+      <button type="submit" class="danger">カメラログを全削除（リセット）</button>
+    </form>
+  </div>
+</div>
+
+<!-- 直近の入退室ログ -->
+<div class="card">
+  <h2>直近の入退室ログ</h2>
+  <table class="table">
+    <thead><tr><th>記録ID</th><th>学科</th><th>学生番号</th><th>生徒名</th><th>入退出時間</th><th>区分</th><th>出席状態</th></tr></thead>
+    <tbody>
+      {% for r in logs %}
+      <tr>
+        <td>{{ r['記録ID'] }}</td>
+        <td>{{ r['学科名'] }}（{{ r['学科ID'] }}）</td>
+        <td>{{ r['学生番号'] }}</td>
+        <td>{{ r['生徒名'] }}</td>
+        <td>{{ r['入退出時間'] }}</td>
+        <td><span class="badge {{ 'in' if r['入室区分'] == '入室' else 'out' }}">{{ r['入室区分'] }}</span></td>
+        <td>{{ r['出席状態'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 直近のカメラログ -->
+<div class="card">
+  <h2>カメラログ</h2>
+  <table class="table">
+    <thead><tr><th>ID</th><th>時刻</th><th>ソース</th><th>ステータス</th><th>マーカー</th><th>スコア</th><th>メモ</th></tr></thead>
+    <tbody>
+      {% for r in camlogs %}
+      <tr>
+        <td>{{ r['id'] }}</td>
+        <td>{{ r['記録時刻'] }}</td>
+        <td>{{ r['ソース'] }}</td>
+        <td>{{ r['ステータス'] }}</td>
+        <td>{{ r['マーカー名'] }}</td>
+        <td>{{ r['スコア'] }}</td>
+        <td>{{ r['メッセージ'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,82 @@
+﻿<!doctype html>
+    <html lang="ja">
+    <head>
+      <meta charset="utf-8">
+      <title>時間割</title>
+      <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; background: #f7f7fb; }
+        h1 { font-size: 20px; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+        th, td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }
+        th { background: #eef3ff; }
+        tr:hover td { background: #fafafa; }
+        td { text-align: center; }
+        select { padding: 8px; font-size: 14px; margin: 12px 0; }
+
+        /* 色付け: ヘッダー部分 */
+        th {
+          background-color: #66bb6a;
+          color: white;
+        }
+
+        /* 色付け: セルに交互の背景色 */
+        tr:nth-child(even) td {
+          background-color: #f1f8e9; /* 淡い緑 */
+        }
+
+        tr:nth-child(odd) td {
+          background-color: #e8f5e9; /* 淡い緑 */
+        }
+
+        /* 色付け: 授業なし（空欄）の場合に背景色を変える */
+        td:empty {
+          background-color: #f2f2f2; /* 灰色 */
+          color: #aaa; /* 色を薄く */
+        }
+
+        /* 色付け: ボタン */
+        .btn { display: inline-block; padding: 8px 12px; background: #2f6feb; color: white; border-radius: 8px; margin-top: 10px; text-decoration: none; }
+        .btn:hover { filter: brightness(0.95); }
+      </style>
+    </head>
+    <body>
+      <h1>時間割</h1>
+
+      <!-- 期の選択 -->
+      <form method="get" action="{{ url_for('jikanwari') }}">
+        <label for="term">期を選択：</label>
+        <select name="term" id="term" onchange="this.form.submit()">
+          {% for term_id, term_name in terms.items() %}
+            <option value="{{ term_id }}" {% if term_id == selected_term %}selected{% endif %}>{{ term_name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+
+      <table>
+        <thead>
+          <tr>
+            <th>時限</th>
+            {% for day in weekdays.values() %}
+            <th>{{ day }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for period, days in schedule.items() %}
+          <tr>
+            <td>{{ period }}限</td>
+            {% for day in weekdays.values() %}
+            <td>
+              {{ days[day]['科目'] }}<br>
+              {{ days[day]['教員'] }}<br>
+              {{ days[day]['教室'] }}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <a class="btn" href="{{ url_for('index') }}">← トップページへ戻る</a>
+    </body>
+    </html>

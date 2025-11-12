@@ -1,0 +1,72 @@
+﻿<!doctype html>
+<meta charset="utf-8"><title>授業科目出席情報</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+h1,h2{margin:0 0 12px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
+th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+th{background:#eef3ff}
+select,button{padding:8px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer;margin-right:6px}
+button:hover{filter:brightness(.95)}
+small.note{color:#666}
+</style>
+
+<div class="card">
+  <h1>授業科目別 出席情報</h1>
+  <form method="get" style="display:flex;gap:10px;flex-wrap:wrap">
+    <div>
+      <label>授業科目</label><br>
+      <select name="subject_id">
+        {% for r in subjects_all %}
+          <option value="{{r['授業科目ID']}}" {{'selected' if r['授業科目ID']==subject_id else ''}}>
+            [学科{{r['学科ID']}}] {{r['授業科目名']}}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>期</label><br>
+      <select name="term" onchange="this.form.submit()">
+        {% for t in terms %}
+          <option value="{{t['期ID']}}" {{'selected' if t['期ID']==term else ''}}>{{t['期名']}}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="align-self:end">
+      <button type="submit">表示</button>
+      <button type="submit" formaction="{{ url_for('kamoku_csv') }}" formmethod="get">CSV出力</button>
+    </div>
+  </form>
+  <small class="note">※ 今日以降の授業は「未記入」として欠席に含めません。</small>
+</div>
+
+<div class="card">
+  <h2>{{subject_name}}（ID:{{subject_id}} / 学科ID:{{gakka_id}} / {{term_label}}）</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>学生番号</th><th>生徒名</th>
+        <th>出席</th><th>遅刻</th><th>欠席</th><th>未記入</th><th>総回数</th><th>出席率</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{r['学生番号']}}</td>
+        <td>{{r['生徒名']}}</td>
+        <td>{{r['出席']}}</td>
+        <td>{{r['遅刻']}}</td>
+        <td>{{r['欠席']}}</td>
+        <td>{{r['未記入']}}</td>
+        <td>{{r['総回数']}}</td>
+        <td>{{r['出席率']}}%</td>
+      </tr>
+      {% endfor %}
+      {% if rows|length == 0 %}
+      <tr><td colspan="8">該当データがありません。</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
