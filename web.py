@@ -640,17 +640,14 @@ def fetch_timetable_1to4():
         return cur.fetchall()
 
 @app.route("/")
-def index2():
-    # school3.db からデータを取得
-    students = fetch_students()
-    logs = fetch_recent_logs(limit=50)
+def index():
+    # TimeTableのデータを取得
+    tt_1to4 = fetch_timetable_1to4()  # 時限1～4のデータを取得
 
     # index.htmlテンプレートをレンダリング
     return render_template(
         "index.html",  # テンプレートファイル名
-        students=students,
-        logs=logs,
-        today=date.today().isoformat(),  # 現在の日付を表示
+        tt_1to4=tt_1to4  # TimeTableデータを渡す
     )
 
 @app.route("/healthz")
@@ -672,6 +669,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
