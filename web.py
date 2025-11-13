@@ -1108,6 +1108,21 @@ def get_conn():
         app.logger.error(f"Database connection error: {e}")
         raise  # 再度エラーを投げて、エラーハンドリングを上位に任せる
 
+@app.route("/reset_camlogs", methods=["POST"])
+@require_logs_auth
+def reset_camlogs():
+    """カメラログの全削除"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM カメラログ;")
+            cur.execute("DELETE FROM sqlite_sequence WHERE name='カメラログ';")  # auto incrementリセット
+            conn.commit()
+        flash("✅ カメラログを全て削除しました。")
+    except Exception as e:
+        flash(f"⚠️ リセットエラー: {e}")
+    return redirect(url_for("logs"))
+
 def fetch_students():
     """List of students with gakka name."""
     with get_conn() as conn:
@@ -1532,3 +1547,4 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
