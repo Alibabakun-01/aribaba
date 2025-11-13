@@ -643,61 +643,61 @@ def ensure_camlog_table():
             db.create_all()  # テーブルを作成する
             print("カメラログテーブルを作成しました。")
 
-@app.route("/")
-def index():
-    # データを取得
-    students = fetch_students()            # 生徒データ
-    logs = fetch_recent_logs(limit=50)    # 入退室ログ
-    gakkas = fetch_gakkas()               # 学科データ
-    camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
-    tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
-    # index.htmlテンプレートをレンダリング
-    return render_template(
-        "index.html",
-        students=students,
-        logs=logs,
-        gakkas=gakkas,
-        today=date.today().isoformat(),
-        # ⚠️ ここにカンマがないため次の行がエラーになる
-        db_path=DATABASE_URL, # DBのパス
-        camlogs=camlogs,
-        tt_1to4=tt_1to4
-    )
+# @app.route("/")
+# def index():
+#     # データを取得
+#     students = fetch_students()            # 生徒データ
+#     logs = fetch_recent_logs(limit=50)    # 入退室ログ
+#     gakkas = fetch_gakkas()               # 学科データ
+#     camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
+#     tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
+#     # index.htmlテンプレートをレンダリング
+#     return render_template(
+#         "index.html",
+#         students=students,
+#         logs=logs,
+#         gakkas=gakkas,
+#         today=date.today().isoformat(),
+#         # ⚠️ ここにカンマがないため次の行がエラーになる
+#         db_path=DATABASE_URL, # DBのパス
+#         camlogs=camlogs,
+#         tt_1to4=tt_1to4
+#     )
 
-# 💡 新規追加: submit エンドポイント
-@app.route("/submit", methods=["POST"])
-def submit():
-    try:
-        # フォームデータから学生番号と学科IDを取得（intに変換）
-        学生番号 = int(request.form.get("student_no"))
-        学科ID = int(request.form.get("gakka_id"))
+# # 💡 新規追加: submit エンドポイント
+# @app.route("/submit", methods=["POST"])
+# def submit():
+#     try:
+#         # フォームデータから学生番号と学科IDを取得（intに変換）
+#         学生番号 = int(request.form.get("student_no"))
+#         学科ID = int(request.form.get("gakka_id"))
 
-        # タイムスタンプを正規化
-        # normalize_ts 関数は元のファイルに存在すると仮定します
-        ts = normalize_ts(request.form.get("ts_local") or request.form.get("ts"))
+#         # タイムスタンプを正規化
+#         # normalize_ts 関数は元のファイルに存在すると仮定します
+#         ts = normalize_ts(request.form.get("ts_local") or request.form.get("ts"))
 
-        # 日時形式のチェック
-        if (request.form.get("ts_local") or request.form.get("ts")) and not ts:
-            flash("日時形式が不正です。datetime-local の値を確認してください。")
-            return redirect(url_for("index"))
+#         # 日時形式のチェック
+#         if (request.form.get("ts_local") or request.form.get("ts")) and not ts:
+#             flash("日時形式が不正です。datetime-local の値を確認してください。")
+#             return redirect(url_for("index"))
 
-        # 生徒マスタに存在するかチェック
-        # get_official_student 関数は元のファイルに存在すると仮定します
-        official_name = get_official_student(学生番号, 学科ID)
-        if not official_name:
-            flash("生徒マスタに存在しません。先に『生徒』テーブルへ登録してください。")
-            return redirect(url_for("index"))
+#         # 生徒マスタに存在するかチェック
+#         # get_official_student 関数は元のファイルに存在すると仮定します
+#         official_name = get_official_student(学生番号, 学科ID)
+#         if not official_name:
+#             flash("生徒マスタに存在しません。先に『生徒』テーブルへ登録してください。")
+#             return redirect(url_for("index"))
 
-        # 入退室の生データ（入力）を記録
-        # insert_attendance_input 関数は元のファイルに存在すると仮定します
-        insert_attendance_input(学生番号, official_name, 学科ID, ts)
+#         # 入退室の生データ（入力）を記録
+#         # insert_attendance_input 関数は元のファイルに存在すると仮定します
+#         insert_attendance_input(学生番号, official_name, 学科ID, ts)
 
-        flash(f"学生番号:{学生番号} ({official_name}) の入退室を記録しました。")
-    except Exception as e:
-        # エラー処理
-        flash(f"エラーが発生しました: {e}")
+#         flash(f"学生番号:{学生番号} ({official_name}) の入退室を記録しました。")
+#     except Exception as e:
+#         # エラー処理
+#         flash(f"エラーが発生しました: {e}")
 
-    return redirect(url_for("index"))
+#     return redirect(url_for("index"))
 
 @app.route("/healthz")
 def healthz():
@@ -718,6 +718,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
