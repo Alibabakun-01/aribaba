@@ -1,15 +1,17 @@
 # main.py (Flask-SQLAlchemy ORM 統合版 - Render対応/安定化)
+import csv
 import psycopg2
 import os
 from typing import Optional, Any # <<< これを追加
 from datetime import datetime, date, timedelta, time, timedelta
-from flask import Flask, render_template, request, url_for, jsonify, redirect, flash, session, abort
+from flask import Flask, render_template, request, url_for, jsonify, redirect, flash, session, abort, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.exc import IntegrityError  # ここでインポート
 from sqlalchemy.orm import aliased
 from functools import wraps
+from io import BytesIO
 # from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
 # =========================================================================
@@ -625,6 +627,111 @@ def fetch_attendance_totals(学生番号: int, 学科ID: int, start_date: str, e
     totals["合計"] = sum(totals.values())
     return totals
 
+def export_csv_to_memory(start_date: Optional[str] = None, end_date: Optional[str] = None,
+                          学生番号: Optional[int] = None, 学科ID: Optional[int] = None) -> BytesIO:
+    where, params = [], []
+    if start_date:
+        where.append("DATE(i.入退出時間, 'localtime') >= ?")
+        params.append(start_date)
+    if end_date:
+        where.append("DATE(i.入退出時間, 'localtime') <= ?")
+        params.append(end_date)
+    if 学生番号 is not None:
+        where.append("i.学生番号 = ?")
+        params.append(学生番号)
+    if 学科ID is not None:
+        where.append("i.学科ID = ?")
+        params.append(学科ID)
+
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    sql = f"""
+        SELECT i.記録ID, i.学生番号, i.生徒名,
+              strftime('%Y-%m-%d %H:%M:%f', i.入退出時間) AS 入退出時間,
+              i.入室区分, i.学科ID, IFNULL(g.学科名,'') AS 学科名
+        FROM 入退室 i
+        LEFT JOIN 学科 g ON g.学科ID = i.学科ID
+        {where_sql}
+        ORDER BY i.入退出時間 ASC, i.記録ID ASC
+    """
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    text_stream = StringIO()
+    writer = csv.writer(text_stream)
+    headers = ["記録ID", "学生番号", "生徒名", "入退出時間", "入室区分", "学科ID", "学科名"]
+    writer.writerow(headers)
+    for r in rows:
+        writer.writerow([r[h] for h in headers])
+
+    data = text_stream.getvalue().encode("utf-8-sig")
+    buf = BytesIO(data)
+    buf.seek(0)
+    return buf
+
+def normalize_ts(ts_input: Optional[str]) -> Optional[str]:
+    if not ts_input:
+        return None
+    s = ts_input.strip().replace('T', ' ')
+    fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
+    for f in fmts:
+        try:
+            dt = datetime.strptime(s, f)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+    return None
+
+def get_attendance_status(入室時刻: str) -> str:
+    try:
+        dt = datetime.strptime(入室時刻, "%Y-%m-%d %H:%M:%S")
+        rec = resolve_period_for(dt)
+        t = dt.time()
+        if rec:
+            if t <= rec["start"]:
+                return "出席"
+            elif t <= rec["end"]:
+                return "遅刻"
+            else:
+                return "欠席"
+        # fallback（TimeTableなし）
+        on_time = datetime.strptime(ATT_ON_TIME, "%H:%M:%S").time()
+        absent_t = datetime.strptime(ATT_ABSENT, "%H:%M:%S").time()
+        if t <= on_time:
+            return "出席"
+        elif t <= absent_t:
+            return "遅刻"
+        else:
+            return "欠席"
+    except Exception:
+        return "不正な時刻"
+
+def get_exit_attendance_status(退出時刻: str) -> str:
+    try:
+        dt = datetime.strptime(退出時刻, "%Y-%m-%d %H:%M:%S")
+        rec = resolve_period_for(dt)
+        if rec:
+            return "一時退出" if dt.time() < rec["end"] else "退出"
+        # fallback（TimeTableなし）
+        absent_t = datetime.strptime(ATT_ABSENT, "%H:%M:%S").time()
+        return "一時退出" if dt.time() < absent_t else "退出"
+    except Exception:
+        return "退出"
+
+# ====== Last status ======
+def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 入室区分
+            FROM 入退室
+            WHERE 学生番号=? AND 学科ID=?
+            ORDER BY 入退出時間 DESC, 記録ID DESC
+            LIMIT 1
+        """, (学生番号, 学科ID))
+        row = cur.fetchone()
+        return row[0] if row else None
 
 def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """期間内の各日の最初の入室ログを取得します（ORM/PostgreSQL版）。"""
@@ -699,7 +806,6 @@ def fetch_subject_attendance_rates(学生番号: int, 学科ID: int, start_date:
         {"授業科目": "科目A", "出席": 15, "遅刻": 1, "欠席": 4, "出席率(%)": "75.0"},
         {"授業科目": "科目B", "出席": 10, "遅刻": 0, "欠席": 1, "出席率(%)": "90.9"},
     ]
-
 
 def get_conn():
     try:
@@ -945,8 +1051,8 @@ def resolve_period_for(ts_dt: datetime) -> Optional[dict]:
 #         学科ID = int(request.form.get("gakka_id"))
 
 #         # タイムスタンプを正規化
-#         # normalize_ts 関数は元のファイルに存在すると仮定します
-#         ts = normalize_ts(request.form.get("ts_local") or request.form.get("ts"))
+#         #  関数は元のファイルに存在すると仮定します
+#         ts = (request.form.get("ts_local") or request.form.get("ts"))
 
 #         # 日時形式のチェック
 #         if (request.form.get("ts_local") or request.form.get("ts")) and not ts:
@@ -1077,4 +1183,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
