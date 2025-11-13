@@ -1,7 +1,7 @@
 # main.py (Flask-SQLAlchemy ORM 統合版 - Render対応/安定化)
 import psycopg2
 import os
-from typing import Optional # <<< これを追加
+from typing import Optional, Any # <<< これを追加
 from datetime import datetime, date, timedelta, time, timedelta
 from flask import Flask, render_template, request, url_for, jsonify, redirect, flash, session, abort
 from flask_sqlalchemy import SQLAlchemy
@@ -10,6 +10,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.exc import IntegrityError  # ここでインポート
 from sqlalchemy.orm import aliased
 from functools import wraps
+from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
 # =========================================================================
 # アプリ / DB 設定
@@ -781,6 +782,139 @@ def ensure_camlog_table():
             db.create_all()  # テーブルを作成する
             print("カメラログテーブルを作成しました。")
 
+def require_logs_auth(view_func):
+    """ /logs 用の簡易パスワード認証 """
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
+        if session.get("logs_ok"):
+            return view_func(*args, **kwargs)
+        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
+        return redirect(url_for("logs_login", next=request.path))
+    return wrapper
+
+def column_exists(table_class, column: str) -> bool:
+    """
+    指定された SQLAlchemy ORM モデルクラス (テーブル) に指定されたカラムが存在するかチェックする。
+    PostgreSQL環境では PRAGMA table_info は使えないため、SQLAlchemyの inspect を使用。
+    """
+    try:
+        # モデルクラス（テーブル）からマッピング情報を取得
+        insp = inspect(table_class)
+        # カラム名がそのマッピング情報に含まれているかチェック
+        return column in insp.columns
+    except Exception as e:
+        # モデルがまだマップされていない、などのエラーハンドリング
+        print(f"Error inspecting table {table_class.__name__}: {e}")
+        return False
+
+def get_gakka_id_by_name(学科名: str) -> Optional[int]:
+    """Resolve 学科名 -> 学科ID (ORM)."""
+    gakka = db.session.query(学科.学科ID).filter(学科.学科名 == 学科名).first()
+    return gakka[0] if gakka else None
+
+def get_subject_name_by_id(subject_id: int) -> str:
+    """授業科目IDから授業科目名を取得 (ORM)."""
+    subject = db.session.query(授業科目.授業科目名).filter(授業科目.授業科目ID == subject_id).first()
+    return subject[0] if subject else '未設定'
+
+def _next_subject_id() -> int:
+    """次に使用する授業科目IDを取得 (COALESCE(MAX(ID), 0) + 1) (ORM)."""
+    # MAX(授業科目ID) を取得し、結果が None の場合は 0 を使用
+    max_id = db.session.query(func.max(授業科目.授業科目ID)).scalar()
+    return (max_id or 0) + 1
+
+# =========================================================================
+# TimeTable Utility
+# =========================================================================
+
+def _parse_int(value: Any, default: Optional[int]=None) -> Optional[int]:
+    """文字列を整数に安全に変換する。"""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+def _parse_hhmm_or_hhmmss(s: str) -> time:
+    """'8:50' / '08:50' / '08:50:00' を time に変換"""
+    s = (s or "").strip()
+    
+    # タイムゾーン情報を持つ可能性のあるフォーマットを試す
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            # datetime.strptime は date part も必要とするが、time() で時間だけ抽出
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            pass
+
+    # ':'区切りでパースを試みる（最後の手段）
+    parts = s.split(":")
+    if len(parts) >= 2:
+        try:
+            h = int(parts[0])
+            m = int(parts[1])
+            s = int(parts[2]) if len(parts) == 3 else 0
+            # timeオブジェクトを直接作成
+            return time(h, m, s)
+        except ValueError:
+            pass
+            
+    raise ValueError(f"Invalid time format: {s}")
+
+def load_timetable() -> list[dict]:
+    """TimeTable を読み込み、(period, start, end) の dict のリストを返す（時限昇順）。"""
+    # ORMを使用して TimeTable からデータを取得
+    rows = db.session.query(TimeTable).order_by(TimeTable.時限).all()
+    
+    result = []
+    for r in rows:
+        try:
+            # データベースから取得した時刻文字列をパース
+            start_t = _parse_hhmm_or_hhmmss(r.開始時刻)
+            end_t = _parse_hhmm_or_hhmmss(r.終了時刻)
+            
+            result.append({
+                "period": r.時限,
+                "start": start_t,
+                "end": end_t
+            })
+        except ValueError as e:
+            print(f"Warning: Failed to parse time for period {r.時限}: {e}")
+            continue
+            
+    return result
+
+def resolve_period_for(ts_dt: datetime) -> Optional[dict]:
+    """タイムスタンプが属する（または最も近い）時限を解決する。"""
+    ttable = load_timetable()
+    if not ttable:
+        return None
+    t = ts_dt.time()
+
+    # 1. 範囲内の時限を探す
+    for rec in ttable:
+        if rec["start"] <= t < rec["end"]:
+            return rec
+
+    # 2. 範囲外の場合、最も近い時限を決定する
+    first_rec = ttable[0]
+    last_rec = ttable[-1]
+
+    # 始業前の場合、最初の時限を返す
+    if t < first_rec["start"]:
+        return first_rec
+    
+    # 終業後の場合、最後の時限を返す
+    if t >= last_rec["end"]:
+        return last_rec
+
+    # 休憩時間中の場合、次の時限を返す
+    for i in range(len(ttable)-1):
+        if ttable[i]["end"] <= t < ttable[i+1]["start"]:
+            return ttable[i+1]
+            
+    return last_rec # フォールバック
+
 @app.route("/")
 def index():
     # データを取得
@@ -801,17 +935,6 @@ def index():
         camlogs=camlogs,
         tt_1to4=tt_1to4
     )
-
-def require_logs_auth(view_func):
-    """ /logs 用の簡易パスワード認証 """
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
-        if session.get("logs_ok"):
-            return view_func(*args, **kwargs)
-        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
-        return redirect(url_for("logs_login", next=request.path))
-    return wrapper
 
 # 💡 新規追加: submit エンドポイント
 @app.route("/submit", methods=["POST"])
@@ -954,6 +1077,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
