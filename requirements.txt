@@ -8,4 +8,3 @@ python-dotenv
 opencv-python
 requests
 gunicorn
-pip install --upgrade Flask
