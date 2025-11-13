@@ -1,3 +1,4 @@
+Gemini
 # main.py (Flask-SQLAlchemy ORM 統合版 - Render対応/安定化)
 import psycopg2
 import os
@@ -10,7 +11,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.exc import IntegrityError  # ここでインポート
 from sqlalchemy.orm import aliased
 from functools import wraps
-from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
+# from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
 # =========================================================================
 # アプリ / DB 設定
@@ -1077,25 +1078,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+web.py
+「web.py」を表示しています。
