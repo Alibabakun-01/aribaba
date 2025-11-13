@@ -596,7 +596,7 @@ def fetch_recent_logs(limit=50):
         # SQLAlchemyを使ってデータを取得
         logs = db.session.query(
             入退室.記録ID, 入退室.学生番号, 入退室.生徒名, 
-            func.strftime('%Y-%m-%d %H:%M:%f', 入退室.入退出時間).label('入退出時間'),
+            func.to_char(入退室.入退出時間, 'YYYY-MM-DD HH24:MI:SS.US').label('入退出時間'),  # PostgreSQLでの日付フォーマット
             入退室.入室区分, 入退室.出席状態, 入退室.学科ID, 学科.学科名
         ).join(学科, 学科.学科ID == 入退室.学科ID).order_by(
             入退室.入退出時間.desc(), 入退室.記録ID.desc()
@@ -672,6 +672,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
