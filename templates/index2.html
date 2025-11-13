@@ -1,42 +1,29 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>学校データ</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TimeTable</title>
 </head>
 <body>
-    <h1>生徒一覧</h1>
+    <h1>TimeTable</h1>
     <table border="1">
-        <tr>
-            <th>学科名</th>
-            <th>学生番号</th>
-            <th>生徒名</th>
-        </tr>
-        {% for student in students %}
-        <tr>
-            <td>{{ student[3] }}</td>  <!-- 学科名 -->
-            <td>{{ student[1] }}</td>  <!-- 学生番号 -->
-            <td>{{ student[2] }}</td>  <!-- 生徒名 -->
-        </tr>
-        {% endfor %}
-    </table>
-
-    <h1>入退室記録</h1>
-    <table border="1">
-        <tr>
-            <th>学生番号</th>
-            <th>生徒名</th>
-            <th>入退出時間</th>
-            <th>入室区分</th>
-        </tr>
-        {% for log in logs %}
-        <tr>
-            <td>{{ log[1] }}</td>  <!-- 学生番号 -->
-            <td>{{ log[2] }}</td>  <!-- 生徒名 -->
-            <td>{{ log[3] }}</td>  <!-- 入退出時間 -->
-            <td>{{ log[4] }}</td>  <!-- 入室区分 -->
-        </tr>
-        {% endfor %}
+        <thead>
+            <tr>
+                <th>時限</th>
+                <th>開始時刻</th>
+                <th>終了時刻</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in tt_1to4 %}
+                <tr>
+                    <td>{{ row[0] }}</td>
+                    <td>{{ row[1] }}</td>
+                    <td>{{ row[2] }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
     </table>
 </body>
 </html>
