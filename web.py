@@ -1305,6 +1305,14 @@ def resolve_period_for(ts_dt: datetime) -> Optional[dict]:
             
     return last_rec # フォールバック
 
+def fetch_students():
+    """List of students with gakka name."""
+    with get_conn() as conn:
+        # SQLAlchemyを使ってデータを取得する
+        students = db.session.query(
+            生徒.学科ID, 生徒.学生番号, 生徒.生徒名, 学科.学科名
+        ).join(学科, 学科.学科ID == 生徒.学科ID).order_by(生徒.学科ID, 生徒.学生番号).all()
+        return students
 # =========================================================================
 # app
 # =========================================================================
@@ -1414,14 +1422,20 @@ def reset_camlogs():
         flash(f"⚠️ リセットエラー: {e}")
     return redirect(url_for("logs"))
 
-def fetch_students():
-    """List of students with gakka name."""
-    with get_conn() as conn:
-        # SQLAlchemyを使ってデータを取得する
-        students = db.session.query(
-            生徒.学科ID, 生徒.学生番号, 生徒.生徒名, 学科.学科名
-        ).join(学科, 学科.学科ID == 生徒.学科ID).order_by(生徒.学科ID, 生徒.学生番号).all()
-        return students
+@app.route("/reset_logs", methods=["POST"])
+@require_logs_auth
+def reset_logs():
+    """入退室ログのリセット"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM 入退室;")
+            cur.execute("DELETE FROM sqlite_sequence WHERE name='入退室';")  # auto incrementリセット
+            conn.commit()
+        flash("✅ 入退室ログを全て削除しました。記録IDがリセットされました。")
+    except Exception as e:
+        flash(f"⚠️ リセットエラー: {e}")
+    return redirect(url_for("index"))
 
 @app.route("/login", methods=["GET", "POST"])
 def logs_login():
@@ -1585,6 +1599,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
