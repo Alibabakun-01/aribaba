@@ -651,15 +651,15 @@ def index():
     gakkas = fetch_gakkas()               # 学科データ
     camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
     tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
-
     # index.htmlテンプレートをレンダリング
     return render_template(
-        "index.html",  # テンプレートファイル名
+        "index.html",
         students=students,
         logs=logs,
         gakkas=gakkas,
-        today=date.today().isoformat(),  # 今日の日付
-        db_path=DATABASE_URL # DBのパス
+        today=date.today().isoformat(),
+        # ⚠️ ここにカンマがないため次の行がエラーになる
+        db_path=DATABASE_URL, # DBのパス
         camlogs=camlogs,
         tt_1to4=tt_1to4
     )
@@ -683,6 +683,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
