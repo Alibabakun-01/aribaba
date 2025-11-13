@@ -640,40 +640,18 @@ def fetch_timetable_1to4():
         return cur.fetchall()
 
 @app.route("/")
-def index():
-    # データを取得
+def index2():
+    # school3.db からデータを取得
     students = fetch_students()
     logs = fetch_recent_logs(limit=50)
-    gakkas = fetch_gakkas()
-    camlogs = fetch_recent_camlogs(limit=100)  # 新たに追加したデータ
-    tt_1to4 = fetch_timetable_1to4()           # 新たに追加したデータ
 
     # index.htmlテンプレートをレンダリング
     return render_template(
         "index.html",  # テンプレートファイル名
         students=students,
         logs=logs,
-        gakkas=gakkas,
-        today=date.today().isoformat(),
-        db_path=os.path.abspath(DB_PATH),  # PostgreSQLに変更する場合はこの行を調整
-        camlogs=camlogs,
-        tt_1to4=tt_1to4
+        today=date.today().isoformat(),  # 現在の日付を表示
     )
-@app.route('/submit', methods=['POST'])
-def submit():
-    # 入退室記録の処理
-    return redirect(url_for('index'))  # 処理後、indexページにリダイレクト
-
-@app.route('/logs')
-def logs():
-    # ログ表示処理
-    return render_template('logs.html')  # logs.htmlはログページのテンプレート
-
-@app.route('/summary')
-def summary():
-    # 個人別サマリー表示処理
-    return render_template('summary.html')  # summary.htmlは個人別出席サマリーのテンプレート
-
 
 @app.route("/healthz")
 def healthz():
@@ -694,5 +672,6 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
