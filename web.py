@@ -612,7 +612,7 @@ def fetch_gakkas():
 
 def fetch_recent_camlogs(limit=100):
     """Fetch recent cam logs."""
-    ensure_camlog_table()  # テーブルが必要であれば作成する関数を呼び出す
+    ensure_camlog_table()  # カメラログテーブルが必要であれば作成する
     with get_conn() as conn:
         # SQLAlchemyを使ってデータを取得
         camlogs = db.session.query(
@@ -631,6 +631,15 @@ def fetch_timetable_1to4():
             TimeTable.時限, TimeTable.開始時刻, TimeTable.終了時刻
         ).filter(TimeTable.時限.between(1, 4)).order_by(TimeTable.時限).all()
         return timetable
+
+def ensure_camlog_table():
+    """Ensure the camera log table exists in PostgreSQL."""
+    with app.app_context():
+        # SQLAlchemy を使ってカメラログテーブルが存在するか確認
+        if not inspect(db.engine).has_table('カメラログ'):
+            # テーブルが存在しない場合、PostgreSQL 用にテーブルを作成する
+            db.create_all()  # テーブルを作成する
+            print("カメラログテーブルを作成しました。")
 
 @app.route("/")
 def index():
@@ -672,6 +681,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
