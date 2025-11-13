@@ -633,7 +633,7 @@ def fetch_timetable_1to4():
         cur = conn.cursor()
         cur.execute("""
             SELECT 時限, 開始時刻, 終了時刻
-            FROM TimeTable
+            FROM "TimeTable"  -- 大文字でテーブル名を指定
             WHERE 時限 BETWEEN 1 AND 4
             ORDER BY 時限
         """)
@@ -669,6 +669,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
