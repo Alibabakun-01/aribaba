@@ -711,6 +711,17 @@ def submit():
 
     return redirect(url_for("index"))
 
+def require_logs_auth(view_func):
+    """ /logs 用の簡易パスワード認証 """
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
+        if session.get("logs_ok"):
+            return view_func(*args, **kwargs)
+        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
+        return redirect(url_for("logs_login", next=request.path))
+    return wrapper
+
 @app.route("/logs")
 @require_logs_auth
 def logs():
@@ -725,17 +736,6 @@ def logs():
         camlogs=camlogs, 
         today=date.today().isoformat() # date.today() を使用するため、datetime モジュールも必要
     )
-
-def require_logs_auth(view_func):
-    """ /logs 用の簡易パスワード認証 """
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
-        if session.get("logs_ok"):
-            return view_func(*args, **kwargs)
-        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
-        return redirect(url_for("logs_login", next=request.path))
-    return wrapper
 
 @app.route("/healthz")
 def healthz():
@@ -756,6 +756,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
