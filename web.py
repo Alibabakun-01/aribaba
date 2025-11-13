@@ -632,26 +632,26 @@ def fetch_timetable_1to4():
         ).filter(TimeTable.時限.between(1, 4)).order_by(TimeTable.時限).all()
         return timetable
 
-# @app.route("/")
-# def index():
-#     # データを取得
-#     students = fetch_students()            # 生徒データ
-#     logs = fetch_recent_logs(limit=50)    # 入退室ログ
-#     gakkas = fetch_gakkas()               # 学科データ
-#     camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
-#     tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
+@app.route("/")
+def index():
+    # データを取得
+    students = fetch_students()            # 生徒データ
+    logs = fetch_recent_logs(limit=50)    # 入退室ログ
+    gakkas = fetch_gakkas()               # 学科データ
+    camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
+    tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
 
-#     # index.htmlテンプレートをレンダリング
-#     return render_template(
-#         "index.html",  # テンプレートファイル名
-#         students=students,
-#         logs=logs,
-#         gakkas=gakkas,
-#         today=date.today().isoformat(),  # 今日の日付
-#         db_path=os.path.abspath(DB_PATH),  # DBのパス
-#         camlogs=camlogs,
-#         tt_1to4=tt_1to4
-#     )
+    # index.htmlテンプレートをレンダリング
+    return render_template(
+        "index.html",  # テンプレートファイル名
+        students=students,
+        logs=logs,
+        gakkas=gakkas,
+        today=date.today().isoformat(),  # 今日の日付
+        db_path=os.path.abspath(DB_PATH),  # DBのパス
+        camlogs=camlogs,
+        tt_1to4=tt_1to4
+    )
 
 @app.route("/healthz")
 def healthz():
@@ -672,6 +672,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
