@@ -2,12 +2,13 @@
 import psycopg2
 import os
 from datetime import datetime, date, timedelta, time, timedelta
-from flask import Flask, render_template, request, url_for, jsonify, redirect, flash
+from flask import Flask, render_template, request, url_for, jsonify, redirect, flash, session,
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.exc import IntegrityError  # ここでインポート
 from sqlalchemy.orm import aliased
+from functools import wraps
 
 # =========================================================================
 # アプリ / DB 設定
@@ -617,6 +618,17 @@ def fetch_recent_camlogs(limit=100):
         # SQLAlchemyを使ってデータを取得
         # web2.py (fetch_recent_camlogs 関数内)
         camlogs = db.session.query(
+        カメラログ.id,
+        カメラログ.記録時刻,
+        カメラログ.ソース,
+        カメラログ.ステータス,
+        func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
+        # 💥 ここが問題: NULLの場合に空文字列 '' を使っている
+        func.coalesce(カメラログ.スコア, '').label('スコア'), 
+        func.coalesce(カメラログ.メッセージ, '').label('メッセージ')
+    ).order_by(カメラログ.記録時刻.desc(), カメラログ.id.desc()).limit(limit).all()
+        
+        camlogs = db.session.query(
             # ... その他の列
             func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
             # ✅ NULLの場合は数値の 0.0 を返すように修正
@@ -699,6 +711,32 @@ def submit():
 
     return redirect(url_for("index"))
 
+@app.route("/logs")
+@require_logs_auth
+def logs():
+    # 認証済みの場合のみ実行される
+    # fetch_recent_logs と fetch_recent_camlogs は他の場所で定義されている必要があります
+    logs = fetch_recent_logs(limit=50)
+    camlogs = fetch_recent_camlogs(limit=100)
+    
+    return render_template(
+        "logs.html", 
+        logs=logs, 
+        camlogs=camlogs, 
+        today=date.today().isoformat() # date.today() を使用するため、datetime モジュールも必要
+    )
+
+def require_logs_auth(view_func):
+    """ /logs 用の簡易パスワード認証 """
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
+        if session.get("logs_ok"):
+            return view_func(*args, **kwargs)
+        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
+        return redirect(url_for("logs_login", next=request.path))
+    return wrapper
+
 @app.route("/healthz")
 def healthz():
     # Renderのヘルスチェックや動作確認用
@@ -718,6 +756,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
