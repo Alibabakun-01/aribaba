@@ -7,6 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.exc import IntegrityError  # ここでインポート
+from sqlalchemy.orm import aliased
 
 # =========================================================================
 # アプリ / DB 設定
@@ -583,71 +584,73 @@ def get_conn():
 def fetch_students():
     """List of students with gakka name."""
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT s.学科ID, s.学生番号, s.生徒名, g.学科名
-            FROM 生徒 s
-            JOIN 学科 g ON g.学科ID = s.学科ID
-            ORDER BY s.学科ID, s.学生番号
-        """)
-        return cur.fetchall()
+        # SQLAlchemyを使ってデータを取得する
+        students = db.session.query(
+            生徒.学科ID, 生徒.学生番号, 生徒.生徒名, 学科.学科名
+        ).join(学科, 学科.学科ID == 生徒.学科ID).order_by(生徒.学科ID, 生徒.学生番号).all()
+        return students
 
 def fetch_recent_logs(limit=50):
+    """Recent logs with limit."""
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT i.記録ID, i.学生番号, i.生徒名,
-                   strftime('%Y-%m-%d %H:%M:%f', i.入退出時間) AS 入退出時間,
-                   i.入室区分, i.出席状態, i.学科ID, g.学科名
-            FROM 入退室 i
-            LEFT JOIN 学科 g ON g.学科ID = i.学科ID
-            ORDER BY i.入退出時間 DESC, i.記録ID DESC
-            LIMIT ?
-        """, (limit,))
-        return cur.fetchall()
+        # SQLAlchemyを使ってデータを取得
+        logs = db.session.query(
+            入退室.記録ID, 入退室.学生番号, 入退室.生徒名, 
+            func.strftime('%Y-%m-%d %H:%M:%f', 入退室.入退出時間).label('入退出時間'),
+            入退室.入室区分, 入退室.出席状態, 入退室.学科ID, 学科.学科名
+        ).join(学科, 学科.学科ID == 入退室.学科ID).order_by(
+            入退室.入退出時間.desc(), 入退室.記録ID.desc()
+        ).limit(limit).all()
+        return logs
 
 def fetch_gakkas():
     """List of gakkas."""
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT 学科ID, 学科名 FROM 学科 ORDER BY 学科ID")
-        return cur.fetchall()
+        # SQLAlchemyを使ってデータを取得
+        gakkas = db.session.query(学科.学科ID, 学科.学科名).order_by(学科.学科ID).all()
+        return gakkas
 
 def fetch_recent_camlogs(limit=100):
+    """Fetch recent cam logs."""
+    ensure_camlog_table()  # テーブルが必要であれば作成する関数を呼び出す
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, 記録時刻, ソース, ステータス,
-                   IFNULL(マーカー名,'') AS マーカー名,
-                   IFNULL(スコア,'' ) AS スコア,
-                   IFNULL(メッセージ,'' ) AS メッセージ
-            FROM カメラログ
-            ORDER BY 記録時刻 DESC, id DESC
-            LIMIT ?
-        """, (limit,))
-        return cur.fetchall()
+        # SQLAlchemyを使ってデータを取得
+        camlogs = db.session.query(
+            カメラログ.id, カメラログ.記録時刻, カメラログ.ソース, カメラログ.ステータス,
+            func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
+            func.coalesce(カメラログ.スコア, '').label('スコア'),
+            func.coalesce(カメラログ.メッセージ, '').label('メッセージ')
+        ).order_by(カメラログ.記録時刻.desc(), カメラログ.id.desc()).limit(limit).all()
+        return camlogs
 
 def fetch_timetable_1to4():
-    """TimeTable から 1～4限を取得（時限昇順）"""
+    """Fetch 1 to 4 periods timetable."""
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT 時限, 開始時刻, 終了時刻
-            FROM "TimeTable"  -- 大文字でテーブル名を指定
-            WHERE 時限 BETWEEN 1 AND 4
-            ORDER BY 時限
-        """)
-        return cur.fetchall()
+        # SQLAlchemyを使ってデータを取得
+        timetable = db.session.query(
+            TimeTable.時限, TimeTable.開始時刻, TimeTable.終了時刻
+        ).filter(TimeTable.時限.between(1, 4)).order_by(TimeTable.時限).all()
+        return timetable
 
 @app.route("/")
 def index():
-    # TimeTableのデータを取得
-    tt_1to4 = fetch_timetable_1to4()  # 時限1～4のデータを取得
+    # データを取得
+    students = fetch_students()            # 生徒データ
+    logs = fetch_recent_logs(limit=50)    # 入退室ログ
+    gakkas = fetch_gakkas()               # 学科データ
+    camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
+    tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
 
     # index.htmlテンプレートをレンダリング
     return render_template(
-        "index2.html",  # テンプレートファイル名
-        tt_1to4=tt_1to4  # TimeTableデータを渡す
+        "index.html",  # テンプレートファイル名
+        students=students,
+        logs=logs,
+        gakkas=gakkas,
+        today=date.today().isoformat(),  # 今日の日付
+        db_path=os.path.abspath(DB_PATH),  # DBのパス
+        camlogs=camlogs,
+        tt_1to4=tt_1to4
     )
 
 @app.route("/healthz")
@@ -669,6 +672,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
