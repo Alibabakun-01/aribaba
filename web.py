@@ -2,7 +2,7 @@
 import psycopg2
 import os
 from datetime import datetime, date, timedelta, time, timedelta
-from flask import Flask, render_template, request, url_for, jsonify, redirect, abort
+from flask import Flask, render_template, request, url_for, jsonify, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import ProgrammingError
@@ -13,7 +13,7 @@ from sqlalchemy.orm import aliased
 # アプリ / DB 設定
 # =========================================================================
 app = Flask(__name__)
-
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'default_secret_key_for_dev')
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///school3.db')
 # DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://user:password@localhost/dbname')
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
@@ -664,6 +664,41 @@ def index():
         tt_1to4=tt_1to4
     )
 
+# 💡 新規追加: submit エンドポイント
+@app.route("/submit", methods=["POST"])
+def submit():
+    try:
+        # フォームデータから学生番号と学科IDを取得（intに変換）
+        学生番号 = int(request.form.get("student_no"))
+        学科ID = int(request.form.get("gakka_id"))
+
+        # タイムスタンプを正規化
+        # normalize_ts 関数は元のファイルに存在すると仮定します
+        ts = normalize_ts(request.form.get("ts_local") or request.form.get("ts"))
+
+        # 日時形式のチェック
+        if (request.form.get("ts_local") or request.form.get("ts")) and not ts:
+            flash("日時形式が不正です。datetime-local の値を確認してください。")
+            return redirect(url_for("index"))
+
+        # 生徒マスタに存在するかチェック
+        # get_official_student 関数は元のファイルに存在すると仮定します
+        official_name = get_official_student(学生番号, 学科ID)
+        if not official_name:
+            flash("生徒マスタに存在しません。先に『生徒』テーブルへ登録してください。")
+            return redirect(url_for("index"))
+
+        # 入退室の生データ（入力）を記録
+        # insert_attendance_input 関数は元のファイルに存在すると仮定します
+        insert_attendance_input(学生番号, official_name, 学科ID, ts)
+
+        flash(f"学生番号:{学生番号} ({official_name}) の入退室を記録しました。")
+    except Exception as e:
+        # エラー処理
+        flash(f"エラーが発生しました: {e}")
+
+    return redirect(url_for("index"))
+
 @app.route("/healthz")
 def healthz():
     # Renderのヘルスチェックや動作確認用
@@ -683,6 +718,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
