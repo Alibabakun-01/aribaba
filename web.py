@@ -659,7 +659,7 @@ def index():
         logs=logs,
         gakkas=gakkas,
         today=date.today().isoformat(),  # 今日の日付
-        db_path=os.path.abspath(DB_PATH),  # DBのパス
+        db_path=DATABASE_URL # DBのパス
         camlogs=camlogs,
         tt_1to4=tt_1to4
     )
@@ -683,6 +683,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
