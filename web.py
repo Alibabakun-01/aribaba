@@ -1312,148 +1312,148 @@ def resolve_period_for(ts_dt: datetime) -> Optional[dict]:
             
     return last_rec # フォールバック
 
-# @app.route("/")
-# def index():
-#     # データを取得
-#     students = fetch_students()            # 生徒データ
-#     logs = fetch_recent_logs(limit=50)    # 入退室ログ
-#     gakkas = fetch_gakkas()               # 学科データ
-#     camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
-#     tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
-#     # index.htmlテンプレートをレンダリング
-#     return render_template(
-#         "index.html",
-#         students=students,
-#         logs=logs,
-#         gakkas=gakkas,
-#         today=date.today().isoformat(),
-#         # ⚠️ ここにカンマがないため次の行がエラーになる
-#         db_path=DATABASE_URL, # DBのパス
-#         camlogs=camlogs,
-#         tt_1to4=tt_1to4
-#     )
+@app.route("/")
+def index():
+    # データを取得
+    students = fetch_students()            # 生徒データ
+    logs = fetch_recent_logs(limit=50)    # 入退室ログ
+    gakkas = fetch_gakkas()               # 学科データ
+    camlogs = fetch_recent_camlogs(limit=100)  # カメラログデータ
+    tt_1to4 = fetch_timetable_1to4()      # 時限1～4のデータを取得
+    # index.htmlテンプレートをレンダリング
+    return render_template(
+        "index.html",
+        students=students,
+        logs=logs,
+        gakkas=gakkas,
+        today=date.today().isoformat(),
+        # ⚠️ ここにカンマがないため次の行がエラーになる
+        db_path=DATABASE_URL, # DBのパス
+        camlogs=camlogs,
+        tt_1to4=tt_1to4
+    )
 
-# # 💡 新規追加: submit エンドポイント
-# @app.route("/submit", methods=["POST"])
-# def submit():
-#     try:
-#         # フォームデータから学生番号と学科IDを取得（intに変換）
-#         学生番号 = int(request.form.get("student_no"))
-#         学科ID = int(request.form.get("gakka_id"))
+# 💡 新規追加: submit エンドポイント
+@app.route("/submit", methods=["POST"])
+def submit():
+    try:
+        # フォームデータから学生番号と学科IDを取得（intに変換）
+        学生番号 = int(request.form.get("student_no"))
+        学科ID = int(request.form.get("gakka_id"))
 
-#         # タイムスタンプを正規化
-#         #  関数は元のファイルに存在すると仮定します
-#         ts = (request.form.get("ts_local") or request.form.get("ts"))
+        # タイムスタンプを正規化
+        #  関数は元のファイルに存在すると仮定します
+        ts = (request.form.get("ts_local") or request.form.get("ts"))
 
-#         # 日時形式のチェック
-#         if (request.form.get("ts_local") or request.form.get("ts")) and not ts:
-#             flash("日時形式が不正です。datetime-local の値を確認してください。")
-#             return redirect(url_for("index"))
+        # 日時形式のチェック
+        if (request.form.get("ts_local") or request.form.get("ts")) and not ts:
+            flash("日時形式が不正です。datetime-local の値を確認してください。")
+            return redirect(url_for("index"))
 
-#         # 生徒マスタに存在するかチェック
-#         # get_official_student 関数は元のファイルに存在すると仮定します
-#         official_name = get_official_student(学生番号, 学科ID)
-#         if not official_name:
-#             flash("生徒マスタに存在しません。先に『生徒』テーブルへ登録してください。")
-#             return redirect(url_for("index"))
+        # 生徒マスタに存在するかチェック
+        # get_official_student 関数は元のファイルに存在すると仮定します
+        official_name = get_official_student(学生番号, 学科ID)
+        if not official_name:
+            flash("生徒マスタに存在しません。先に『生徒』テーブルへ登録してください。")
+            return redirect(url_for("index"))
 
-#         # 入退室の生データ（入力）を記録
-#         # insert_attendance_input 関数は元のファイルに存在すると仮定します
-#         insert_attendance_input(学生番号, official_name, 学科ID, ts)
+        # 入退室の生データ（入力）を記録
+        # insert_attendance_input 関数は元のファイルに存在すると仮定します
+        insert_attendance_input(学生番号, official_name, 学科ID, ts)
 
-#         flash(f"学生番号:{学生番号} ({official_name}) の入退室を記録しました。")
-#     except Exception as e:
-#         # エラー処理
-#         flash(f"エラーが発生しました: {e}")
+        flash(f"学生番号:{学生番号} ({official_name}) の入退室を記録しました。")
+    except Exception as e:
+        # エラー処理
+        flash(f"エラーが発生しました: {e}")
 
-#     return redirect(url_for("index"))
+    return redirect(url_for("index"))
 
-# @app.route("/logs")
-# @require_logs_auth
-# def logs():
-#     # 認証済みの場合のみ実行される
-#     # fetch_recent_logs と fetch_recent_camlogs は他の場所で定義されている必要があります
-#     logs = fetch_recent_logs(limit=50)
-#     camlogs = fetch_recent_camlogs(limit=100)
+@app.route("/logs")
+@require_logs_auth
+def logs():
+    # 認証済みの場合のみ実行される
+    # fetch_recent_logs と fetch_recent_camlogs は他の場所で定義されている必要があります
+    logs = fetch_recent_logs(limit=50)
+    camlogs = fetch_recent_camlogs(limit=100)
     
-#     return render_template(
-#         "logs.html", 
-#         logs=logs, 
-#         camlogs=camlogs, 
-#         today=date.today().isoformat() # date.today() を使用するため、datetime モジュールも必要
-#     )
+    return render_template(
+        "logs.html", 
+        logs=logs, 
+        camlogs=camlogs, 
+        today=date.today().isoformat() # date.today() を使用するため、datetime モジュールも必要
+    )
 
-# @app.route("/summary", methods=["GET", "POST"])
-# def summary():
-#     """
-#     出欠サマリーページを表示・処理します。
-#     生徒と期間を指定し、合計出欠数、日次チェックイン、詳細ログなどを表示します。
-#     """
-#     # 必須のヘルパー関数（このファイル内で定義されている必要があります）
-#     from .web_summary_functions import default_month_range, get_official_student, \
-#                                        fetch_attendance_totals, fetch_daily_first_checkin, \
-#                                        fetch_attendance_details, fetch_subject_attendance_rates
+@app.route("/summary", methods=["GET", "POST"])
+def summary():
+    """
+    出欠サマリーページを表示・処理します。
+    生徒と期間を指定し、合計出欠数、日次チェックイン、詳細ログなどを表示します。
+    """
+    # 必須のヘルパー関数（このファイル内で定義されている必要があります）
+    from .web_summary_functions import default_month_range, get_official_student, \
+                                       fetch_attendance_totals, fetch_daily_first_checkin, \
+                                       fetch_attendance_details, fetch_subject_attendance_rates
 
-#     students = fetch_students()
-#     gakkas = fetch_gakkas()
+    students = fetch_students()
+    gakkas = fetch_gakkas()
 
-#     # デフォルト期間：今月1日〜今日
-#     start_default, end_default = default_month_range()
+    # デフォルト期間：今月1日〜今日
+    start_default, end_default = default_month_range()
 
-#     # フォーム値を取得
-#     student_no = request.values.get("student_no")
-#     gakka_id_str = request.values.get("gakka_id")
-#     start_date = request.values.get("start", start_default)
-#     end_date = request.values.get("end", end_default)
+    # フォーム値を取得
+    student_no = request.values.get("student_no")
+    gakka_id_str = request.values.get("gakka_id")
+    start_date = request.values.get("start", start_default)
+    end_date = request.values.get("end", end_default)
 
-#     totals = None
-#     daily = []
-#     subject_rates = []
-#     selected_student_name = None
-#     selected_gakka_name = None
-#     attendance_details = []
+    totals = None
+    daily = []
+    subject_rates = []
+    selected_student_name = None
+    selected_gakka_name = None
+    attendance_details = []
 
-#     if student_no and gakka_id_str:
-#         try:
-#             学生番号 = int(student_no)
-#             学科ID = int(gakka_id_str)
+    if student_no and gakka_id_str:
+        try:
+            学生番号 = int(student_no)
+            学科ID = int(gakka_id_str)
 
-#             # 1. 生徒名と学科名を取得
-#             selected_student_name = get_official_student(学生番号, 学科ID)
+            # 1. 生徒名と学科名を取得
+            selected_student_name = get_official_student(学生番号, 学科ID)
             
-#             # 学科名を取得 (ORMを使用)
-#             gakka = 学科.query.filter(学科.学科ID == 学科ID).first()
-#             selected_gakka_name = gakka.学科名 if gakka else f"ID:{学科ID}"
+            # 学科名を取得 (ORMを使用)
+            gakka = 学科.query.filter(学科.学科ID == 学科ID).first()
+            selected_gakka_name = gakka.学科名 if gakka else f"ID:{学科ID}"
 
-#             # 2. 各種集計データを取得
-#             totals = fetch_attendance_totals(学生番号, 学科ID, start_date, end_date)
-#             daily = fetch_daily_first_checkin(学生番号, 学科ID, start_date, end_date)
-#             attendance_details = fetch_attendance_details(学生番号, 学科ID, start_date, end_date)
-#             subject_rates = fetch_subject_attendance_rates(学生番号, 学科ID, start_date, end_date)
+            # 2. 各種集計データを取得
+            totals = fetch_attendance_totals(学生番号, 学科ID, start_date, end_date)
+            daily = fetch_daily_first_checkin(学生番号, 学科ID, start_date, end_date)
+            attendance_details = fetch_attendance_details(学生番号, 学科ID, start_date, end_date)
+            subject_rates = fetch_subject_attendance_rates(学生番号, 学科ID, start_date, end_date)
 
-#         except Exception as e:
-#             # flash を使用するには app.secret_key の設定とテンプレートでの表示が必要です
-#             print(f"サマリー取得エラー: {e}") 
-#             # flash(f"サマリー取得エラー: {e}") # 本番環境では flash を使用
+        except Exception as e:
+            # flash を使用するには app.secret_key の設定とテンプレートでの表示が必要です
+            print(f"サマリー取得エラー: {e}") 
+            # flash(f"サマリー取得エラー: {e}") # 本番環境では flash を使用
 
-#     # 3. テンプレートをレンダリング
-#     return render_template(
-#         "summary.html",
-#         students=students,
-#         gakkas=gakkas,
-#         totals=totals,
-#         daily=daily,
-#         attendance_details=attendance_details,
-#         subject_rates=subject_rates,
-#         selected_student_name=selected_student_name,
-#         selected_gakka_name=selected_gakka_name,
-#         start_date=start_date,
-#         end_date=end_date,
-#         start_default=start_default,
-#         end_default=end_default,
-#         # DB_PATH ではなく DATABASE_URL を使用（Render環境向け）
-#         db_path=DATABASE_URL, 
-#     )
+    # 3. テンプレートをレンダリング
+    return render_template(
+        "summary.html",
+        students=students,
+        gakkas=gakkas,
+        totals=totals,
+        daily=daily,
+        attendance_details=attendance_details,
+        subject_rates=subject_rates,
+        selected_student_name=selected_student_name,
+        selected_gakka_name=selected_gakka_name,
+        start_date=start_date,
+        end_date=end_date,
+        start_default=start_default,
+        end_default=end_default,
+        # DB_PATH ではなく DATABASE_URL を使用（Render環境向け）
+        db_path=DATABASE_URL, 
+    )
 
 @app.route("/healthz")
 def healthz():
@@ -1474,7 +1474,3 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
-
-
-
-
