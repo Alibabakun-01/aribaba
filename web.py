@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError  # ここでインポート
 from sqlalchemy.orm import aliased
 from functools import wraps
 from io import BytesIO
+from collections import defaultdict
 # from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
 # =========================================================================
@@ -851,6 +852,135 @@ def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int, �
         """, (学生番号, 生徒名, 学科ID, ts, next_status, att))
         conn.commit()
 
+def ensure_absent_reason_table():
+    with get_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS 欠席理由 (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              学生番号 INTEGER NOT NULL,
+              学科ID  SMALLINT NOT NULL,
+              科目ID  SMALLINT NOT NULL,
+              日付     DATE NOT NULL,
+              理由区分 TEXT NOT NULL,     -- '病欠','公欠','寝坊','その他'
+              その他理由 TEXT,
+              登録時刻 DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime')),
+              UNIQUE(学生番号, 学科ID, 科目ID, 日付)
+            )
+        """)
+        conn.commit()
+
+def fetch_absent_reasons_map(学生番号: int, 学科ID: int, 科目ID: int):
+    """(日付 -> dict{理由区分, その他理由}) のマップを返す"""
+    ensure_absent_reason_table()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 日付, 理由区分, IFNULL(その他理由,'') AS その他理由
+            FROM 欠席理由
+            WHERE 学生番号=? AND 学科ID=? AND 科目ID=?
+        """, (学生番号, 学科ID, 科目ID))
+        rows = cur.fetchall()
+    return { r["日付"]: {"理由区分": r["理由区分"], "その他理由": r["その他理由"]} for r in rows }
+
+def upsert_absent_reason(学生番号: int, 学科ID: int, 科目ID: int, 日付: str, 理由区分: str, その他理由: str = ""):
+    ensure_absent_reason_table()
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO 欠席理由(学生番号,学科ID,科目ID,日付,理由区分,その他理由)
+            VALUES(?,?,?,?,?,?)
+            ON CONFLICT(学生番号,学科ID,科目ID,日付)
+            DO UPDATE SET 理由区分=excluded.理由区分, その他理由=excluded.その他理由,
+                         登録時刻=(strftime('%Y-%m-%d %H:%M:%S','now','localtime'))
+        """, (学生番号, 学科ID, 科目ID, 日付, 理由区分, その他理由))
+        conn.commit()
+
+# ====== Generate Monthly Schedule ======
+
+def generate_monthly_schedule(selected_month=None, selected_year=None):
+    ensure_special_schedule()
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # 週時間割・授業計画・科目/教室名を先読み
+        cur.execute("""SELECT 年度, 学科ID, 期, 曜日, 時限, 科目ID, 教室ID, 備考 FROM 週時間割""")
+        week_schedule = cur.fetchall()
+
+        cur.execute("""SELECT 日付, 期, 授業曜日, 備考 FROM 授業計画""")
+        class_schedule = cur.fetchall()
+
+        cur.execute("""SELECT 授業科目ID, 授業科目名 FROM 授業科目""")
+        subj_map = {r["授業科目ID"]: r["授業科目名"] for r in cur.fetchall()}
+
+        cur.execute("""SELECT 教室ID, 教室名 FROM 教室""")
+        room_map = {r["教室ID"]: r["教室名"] for r in cur.fetchall()}
+
+    # 特別時間割（指定月だけを読み込む）
+    special = {}
+    if selected_month and selected_year:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+              SELECT 日付, 学科ID, 時限, 科目ID, 教室ID, 備考
+              FROM 特別時間割
+              WHERE strftime('%Y', 日付)=? AND strftime('%m', 日付)=?
+            """, (str(selected_year), f"{selected_month:02d}"))
+            for r in cur.fetchall():
+                d = datetime.strptime(r["日付"], "%Y-%m-%d").date()
+                key = (d, r["学科ID"], r["時限"])
+                special[key] = dict(r)
+
+    # 月ごとの時間割
+    monthly_schedule = defaultdict(lambda: defaultdict(list))  # 月 -> 日 -> リスト
+
+    for c in class_schedule:
+        # 授業計画の日付を決定
+        d = datetime.strptime(c["日付"], "%Y/%m/%d").date() if "/" in c["日付"] else datetime.strptime(c["日付"], "%Y-%m-%d").date()
+        month = d.month
+        day = d.day
+
+        if selected_month and month != selected_month:
+            continue
+        if selected_year and d.year != selected_year:
+            continue
+
+        term = c["期"]
+        youbi = c["授業曜日"]
+
+        # 対象日の全学科×時限候補（週時間割から） 
+        for w in week_schedule:
+            if w["期"] == term and w["曜日"] == youbi:
+                gakka_id = w["学科ID"]
+                period = w["時限"]
+
+                # 特別時間割で上書きがあればそれを使う
+                sp = special.get((d, gakka_id, period))
+                if sp:
+                    subj_id = sp["科目ID"]
+                    room_id = sp["教室ID"]
+                    note = sp["備考"]
+                else:
+                    subj_id = w["科目ID"]
+                    room_id = w["教室ID"]
+                    note = w["備考"]
+
+                subject_name = subj_map.get(subj_id, "（未設定）") if subj_id else "（空コマ）"
+                room_name = room_map.get(room_id, "") if room_id else ""
+
+                monthly_schedule[month][day].append({
+                    "時限": period,
+                    "学科ID": gakka_id,
+                    "科目名": subject_name + (f"（{room_name}）" if room_name else ""),
+                    "教室ID": room_id,
+                    "備考": note or ""
+                })
+
+        # 同日の中で時限順に整列
+        if monthly_schedule[month][day]:
+            monthly_schedule[month][day].sort(key=lambda x: (x["時限"], x["学科ID"]))
+
+    return monthly_schedule
+
+
 # ====== Camera Log (new, minimal addition) ======
 def ensure_special_schedule():
     """日付ごとの例外（上書き）時間割テーブル"""
@@ -1344,6 +1474,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
