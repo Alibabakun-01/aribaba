@@ -610,27 +610,27 @@ def fetch_gakkas():
         gakkas = db.session.query(学科.学科ID, 学科.学科名).order_by(学科.学科ID).all()
         return gakkas
 
-# def fetch_recent_camlogs(limit=100):
-#     """Fetch recent cam logs."""
-#     ensure_camlog_table()  # テーブルが必要であれば作成する関数を呼び出す
-#     with get_conn() as conn:
-#         # SQLAlchemyを使ってデータを取得
-#         camlogs = db.session.query(
-#             カメラログ.id, カメラログ.記録時刻, カメラログ.ソース, カメラログ.ステータス,
-#             func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
-#             func.coalesce(カメラログ.スコア, '').label('スコア'),
-#             func.coalesce(カメラログ.メッセージ, '').label('メッセージ')
-#         ).order_by(カメラログ.記録時刻.desc(), カメラログ.id.desc()).limit(limit).all()
-#         return camlogs
+def fetch_recent_camlogs(limit=100):
+    """Fetch recent cam logs."""
+    ensure_camlog_table()  # テーブルが必要であれば作成する関数を呼び出す
+    with get_conn() as conn:
+        # SQLAlchemyを使ってデータを取得
+        camlogs = db.session.query(
+            カメラログ.id, カメラログ.記録時刻, カメラログ.ソース, カメラログ.ステータス,
+            func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
+            func.coalesce(カメラログ.スコア, '').label('スコア'),
+            func.coalesce(カメラログ.メッセージ, '').label('メッセージ')
+        ).order_by(カメラログ.記録時刻.desc(), カメラログ.id.desc()).limit(limit).all()
+        return camlogs
 
-# def fetch_timetable_1to4():
-#     """Fetch 1 to 4 periods timetable."""
-#     with get_conn() as conn:
-#         # SQLAlchemyを使ってデータを取得
-#         timetable = db.session.query(
-#             TimeTable.時限, TimeTable.開始時刻, TimeTable.終了時刻
-#         ).filter(TimeTable.時限.between(1, 4)).order_by(TimeTable.時限).all()
-#         return timetable
+def fetch_timetable_1to4():
+    """Fetch 1 to 4 periods timetable."""
+    with get_conn() as conn:
+        # SQLAlchemyを使ってデータを取得
+        timetable = db.session.query(
+            TimeTable.時限, TimeTable.開始時刻, TimeTable.終了時刻
+        ).filter(TimeTable.時限.between(1, 4)).order_by(TimeTable.時限).all()
+        return timetable
 
 # @app.route("/")
 # def index():
@@ -672,5 +672,6 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
