@@ -624,7 +624,7 @@ def fetch_recent_camlogs(limit=100):
         カメラログ.ステータス,
         func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
         # 💥 ここが問題: NULLの場合に空文字列 '' を使っている
-        func.coalesce(カメラログ.スコア, '').label('スコア'), 
+        func.coalesce(カメラログ.スコア, 0.0).label('スコア'), 
         func.coalesce(カメラログ.メッセージ, '').label('メッセージ')
     ).order_by(カメラログ.記録時刻.desc(), カメラログ.id.desc()).limit(limit).all()
         
@@ -676,6 +676,17 @@ def index():
         tt_1to4=tt_1to4
     )
 
+def require_logs_auth(view_func):
+    """ /logs 用の簡易パスワード認証 """
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
+        if session.get("logs_ok"):
+            return view_func(*args, **kwargs)
+        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
+        return redirect(url_for("logs_login", next=request.path))
+    return wrapper
+
 # 💡 新規追加: submit エンドポイント
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -711,17 +722,6 @@ def submit():
 
     return redirect(url_for("index"))
 
-def require_logs_auth(view_func):
-    """ /logs 用の簡易パスワード認証 """
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
-        if session.get("logs_ok"):
-            return view_func(*args, **kwargs)
-        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
-        return redirect(url_for("logs_login", next=request.path))
-    return wrapper
-
 @app.route("/logs")
 @require_logs_auth
 def logs():
@@ -756,6 +756,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
