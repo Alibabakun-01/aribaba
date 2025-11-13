@@ -573,9 +573,12 @@ def init_db_on_startup():
 # ルーティング（必要に応じて増やしてください）
 # =========================================================================
 def get_conn():
-    """PostgreSQL接続"""
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        app.logger.error(f"Database connection error: {e}")
+        raise  # 再度エラーを投げて、エラーハンドリングを上位に任せる
 
 def fetch_students():
     """List of students with gakka name."""
@@ -656,6 +659,10 @@ def index():
         camlogs=camlogs,
         tt_1to4=tt_1to4
     )
+except Exception as e:
+        # エラーメッセージをログに記録
+        app.logger.error(f"Error occurred while rendering the index page: {e}")
+        return "An error occurred while loading the page.", 500  # エラーメッセージと共に500エラーを返す
 
 @app.route('/submit', methods=['POST'])
 def submit():
@@ -692,3 +699,4 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
