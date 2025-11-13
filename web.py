@@ -646,7 +646,7 @@ def index():
 
     # index.htmlテンプレートをレンダリング
     return render_template(
-        "index.html2",  # テンプレートファイル名
+        "index2.html",  # テンプレートファイル名
         tt_1to4=tt_1to4  # TimeTableデータを渡す
     )
 
@@ -669,6 +669,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
