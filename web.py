@@ -773,6 +773,167 @@ def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str,
     ]
     return daily_list
 
+# ====== Common Utils ======
+def normalize_ts(ts_input: Optional[str]) -> Optional[str]:
+    if not ts_input:
+        return None
+    s = ts_input.strip().replace('T', ' ')
+    fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
+    for f in fmts:
+        try:
+            dt = datetime.strptime(s, f)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+    return None
+
+def get_attendance_status(入室時刻: str) -> str:
+    try:
+        dt = datetime.strptime(入室時刻, "%Y-%m-%d %H:%M:%S")
+        rec = resolve_period_for(dt)
+        t = dt.time()
+        if rec:
+            if t <= rec["start"]:
+                return "出席"
+            elif t <= rec["end"]:
+                return "遅刻"
+            else:
+                return "欠席"
+        # fallback（TimeTableなし）
+        on_time = datetime.strptime(ATT_ON_TIME, "%H:%M:%S").time()
+        absent_t = datetime.strptime(ATT_ABSENT, "%H:%M:%S").time()
+        if t <= on_time:
+            return "出席"
+        elif t <= absent_t:
+            return "遅刻"
+        else:
+            return "欠席"
+    except Exception:
+        return "不正な時刻"
+
+def get_exit_attendance_status(退出時刻: str) -> str:
+    try:
+        dt = datetime.strptime(退出時刻, "%Y-%m-%d %H:%M:%S")
+        rec = resolve_period_for(dt)
+        if rec:
+            return "一時退出" if dt.time() < rec["end"] else "退出"
+        # fallback（TimeTableなし）
+        absent_t = datetime.strptime(ATT_ABSENT, "%H:%M:%S").time()
+        return "一時退出" if dt.time() < absent_t else "退出"
+    except Exception:
+        return "退出"
+
+# ====== Insert entry (existing logic kept) ======
+def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int, 入退出時間: Optional[str] = None):
+    ts = normalize_ts(入退出時間) if 入退出時間 else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    last = get_last_status(学生番号, 学科ID)
+    next_status = "退出" if last == "入室" else "入室"
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # Ensure column 出席状態 exists (do not auto-alter by default)
+        cur.execute("PRAGMA table_info(入退室);")
+        cols = [r[1] for r in cur.fetchall()]
+        if "出席状態" not in cols:
+            # 既存DBに合わせるため、ここでは自動追加しない
+            pass
+
+        # Decide attendance status
+        if next_status == "入室":
+            att = get_attendance_status(ts)
+        else:
+            att = get_exit_attendance_status(ts)
+
+        cur.execute("""
+            INSERT INTO 入退室 (学生番号, 生徒名, 学科ID, 入退出時間, 入室区分, 出席状態)
+            VALUES (?,?,?,?,?,?)
+        """, (学生番号, 生徒名, 学科ID, ts, next_status, att))
+        conn.commit()
+
+# ====== Camera Log (new, minimal addition) ======
+def ensure_special_schedule():
+    """日付ごとの例外（上書き）時間割テーブル"""
+    with get_conn() as conn:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS 特別時間割 (
+            日付      TEXT    NOT NULL,         -- 'YYYY-MM-DD'
+            学科ID    SMALLINT NOT NULL,
+            時限      TINYINT NOT NULL,
+            科目ID    SMALLINT,                 -- NULL=空コマ
+            教室ID    SMALLINT,
+            備考      NVARCHAR(50),
+            PRIMARY KEY(日付, 学科ID, 時限)
+        )
+        """)
+        conn.commit()
+
+def add_camlog(記録時刻: str, ソース: str, ステータス: str,
+               マーカー名: str = None, スコア: float = None, メッセージ: str = None):
+    ensure_special_schedule()
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO カメラログ (記録時刻, ソース, ステータス, マーカー名, スコア, メッセージ)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (記録時刻, ソース, ステータス, マーカー名, スコア, メッセージ))
+        conn.commit()
+
+def fetch_daily_inout(学生番号: int, 学科ID: int, start_date: str, end_date: str):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            WITH first_in AS (
+              SELECT
+                DATE(入退出時間,'localtime') AS 日付,
+                MIN(入退出時間) AS 最初入室時刻
+              FROM 入退室
+              WHERE 学生番号=? AND 学科ID=? AND 入室区分='入室'
+                AND DATE(入退出時間,'localtime') BETWEEN ? AND ?
+              GROUP BY DATE(入退出時間,'localtime')
+            ),
+            last_out AS (
+              SELECT
+                DATE(入退出時間,'localtime') AS 日付,
+                MAX(入退出時間) AS 最後退出時刻
+              FROM 入退室
+              WHERE 学生番号=? AND 学科ID=? AND 入室区分='退出'
+                AND DATE(入退出時間,'localtime') BETWEEN ? AND ?
+              GROUP BY DATE(入退出時間,'localtime')
+            ),
+            days AS (
+              SELECT 日付 FROM first_in
+              UNION
+              SELECT 日付 FROM last_out
+            )
+            SELECT
+              d.日付,
+              tin.入退出時間 AS 最初入室,
+              tin.出席状態   AS 最初入室_出席状態,
+              tout.入退出時間 AS 最後退出,
+              tout.出席状態   AS 最後退出_出席状態
+            FROM days d
+            LEFT JOIN first_in fi ON fi.日付 = d.日付
+            LEFT JOIN last_out lo ON lo.日付 = d.日付
+            LEFT JOIN 入退室 tin
+              ON fi.最初入室時刻 IS NOT NULL
+             AND tin.入退出時間 = fi.最初入室時刻
+             AND DATE(tin.入退出時間,'localtime') = d.日付
+             AND tin.学生番号 = ?
+             AND tin.学科ID   = ?
+            LEFT JOIN 入退室 tout
+              ON lo.最後退出時刻 IS NOT NULL
+             AND tout.入退出時間 = lo.最後退出時刻
+             AND DATE(tout.入退出時間,'localtime') = d.日付
+             AND tout.学生番号 = ?
+             AND tout.学科ID   = ?
+            ORDER BY d.日付 DESC
+        """, (
+            学生番号, 学科ID, start_date, end_date,   # first_in
+            学生番号, 学科ID, start_date, end_date,   # last_out
+            学生番号, 学科ID,                          # join tin
+            学生番号, 学科ID                           # join tout
+        ))
+        return cur.fetchall()
 
 def fetch_attendance_details(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """期間内のすべての入退室ログの詳細を取得します（簡素化ORM版）。"""
@@ -1183,5 +1344,6 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
