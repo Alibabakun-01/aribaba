@@ -1108,29 +1108,16 @@ def get_conn():
         app.logger.error(f"Database connection error: {e}")
         raise  # 再度エラーを投げて、エラーハンドリングを上位に任せる
 
-@app.route("/reset_camlogs", methods=["POST"])
-@require_logs_auth
-def reset_camlogs():
-    """カメラログの全削除"""
-    try:
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM カメラログ;")
-            cur.execute("DELETE FROM sqlite_sequence WHERE name='カメラログ';")  # auto incrementリセット
-            conn.commit()
-        flash("✅ カメラログを全て削除しました。")
-    except Exception as e:
-        flash(f"⚠️ リセットエラー: {e}")
-    return redirect(url_for("logs"))
-
-def fetch_students():
-    """List of students with gakka name."""
-    with get_conn() as conn:
-        # SQLAlchemyを使ってデータを取得する
-        students = db.session.query(
-            生徒.学科ID, 生徒.学生番号, 生徒.生徒名, 学科.学科名
-        ).join(学科, 学科.学科ID == 生徒.学科ID).order_by(生徒.学科ID, 生徒.学生番号).all()
-        return students
+def require_logs_auth(view_func):
+    """ /logs 用の簡易パスワード認証 """
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
+        if session.get("logs_ok"):
+            return view_func(*args, **kwargs)
+        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
+        return redirect(url_for("logs_login", next=request.path))
+    return wrapper
 
 def fetch_recent_logs(limit=50):
     """Recent logs with limit."""
@@ -1195,17 +1182,6 @@ def ensure_camlog_table():
             # テーブルが存在しない場合、PostgreSQL 用にテーブルを作成する
             db.create_all()  # テーブルを作成する
             print("カメラログテーブルを作成しました。")
-
-def require_logs_auth(view_func):
-    """ /logs 用の簡易パスワード認証 """
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        # セッションに 'logs_ok' がセットされていれば、認証済みと見なす
-        if session.get("logs_ok"):
-            return view_func(*args, **kwargs)
-        # 未認証 → ログイン画面へリダイレクト。nextパラメータで元のURLを渡す。
-        return redirect(url_for("logs_login", next=request.path))
-    return wrapper
 
 def column_exists(table_class, column: str) -> bool:
     """
@@ -1329,6 +1305,10 @@ def resolve_period_for(ts_dt: datetime) -> Optional[dict]:
             
     return last_rec # フォールバック
 
+# =========================================================================
+# app
+# =========================================================================
+
 @app.route("/")
 def index():
     # データを取得
@@ -1384,6 +1364,30 @@ def submit():
         flash(f"エラーが発生しました: {e}")
 
     return redirect(url_for("index"))
+
+@app.route("/reset_camlogs", methods=["POST"])
+@require_logs_auth
+def reset_camlogs():
+    """カメラログの全削除"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM カメラログ;")
+            cur.execute("DELETE FROM sqlite_sequence WHERE name='カメラログ';")  # auto incrementリセット
+            conn.commit()
+        flash("✅ カメラログを全て削除しました。")
+    except Exception as e:
+        flash(f"⚠️ リセットエラー: {e}")
+    return redirect(url_for("logs"))
+
+def fetch_students():
+    """List of students with gakka name."""
+    with get_conn() as conn:
+        # SQLAlchemyを使ってデータを取得する
+        students = db.session.query(
+            生徒.学科ID, 生徒.学生番号, 生徒.生徒名, 学科.学科名
+        ).join(学科, 学科.学科ID == 生徒.学科ID).order_by(生徒.学科ID, 生徒.学生番号).all()
+        return students
 
 @app.route("/login", methods=["GET", "POST"])
 def logs_login():
@@ -1547,4 +1551,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
