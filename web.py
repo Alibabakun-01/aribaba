@@ -659,11 +659,6 @@ def index():
         camlogs=camlogs,
         tt_1to4=tt_1to4
     )
-except Exception as e:
-        # エラーメッセージをログに記録
-        app.logger.error(f"Error occurred while rendering the index page: {e}")
-        return "An error occurred while loading the page.", 500  # エラーメッセージと共に500エラーを返す
-
 @app.route('/submit', methods=['POST'])
 def submit():
     # 入退室記録の処理
@@ -699,4 +694,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
