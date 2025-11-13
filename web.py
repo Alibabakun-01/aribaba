@@ -1365,6 +1365,40 @@ def submit():
 
     return redirect(url_for("index"))
 
+@app.route("/download")
+@require_logs_auth
+def download_csv():
+    # クエリパラメータの取得
+    start = request.args.get("start") or None
+    end = request.args.get("end") or None
+    student = request.args.get("student")
+    gakka = request.args.get("gakka")
+    学生番号 = int(student) if student else None
+    学科ID = int(gakka) if gakka else None
+    
+    try:
+        # CSVをメモリ上で生成
+        buf = export_csv_to_memory(start, end, 学生番号, 学科ID)
+        
+        # ファイル名の設定
+        fname = "入退室_全件.csv"
+        if start or end or 学生番号 or 学科ID:
+            tag = date.today().strftime("%Y%m%d")
+            fname = f"入退室_条件付き_{tag}.csv"
+        
+        try:
+            # Flask 2.0以降のsend_fileでファイルを返す
+            return send_file(buf, as_attachment=True, download_name=fname,
+                             mimetype="text/csv; charset=utf-8")
+        except TypeError:
+            # Flask 1.x系の場合の対応
+            return send_file(buf, as_attachment=True, attachment_filename=fname,
+                             mimetype="text/csv; charset=utf-8")
+
+    except Exception as e:
+        flash(f"CSV出力エラー: {e}")
+        return redirect(url_for("index"))
+
 @app.route("/reset_camlogs", methods=["POST"])
 @require_logs_auth
 def reset_camlogs():
@@ -1551,5 +1585,6 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
