@@ -1,8 +1,9 @@
 # main.py (Flask-SQLAlchemy ORM 統合版 - Render対応/安定化)
 import psycopg2
 import os
+from typing import Optional # <<< これを追加
 from datetime import datetime, date, timedelta, time, timedelta
-from flask import Flask, render_template, request, url_for, jsonify, redirect, flash, session
+from flask import Flask, render_template, request, url_for, jsonify, redirect, flash, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import ProgrammingError
@@ -953,6 +954,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
