@@ -603,12 +603,12 @@ def fetch_recent_logs(limit=50):
         ).limit(limit).all()
         return logs
 
-# def fetch_gakkas():
-#     """List of gakkas."""
-#     with get_conn() as conn:
-#         # SQLAlchemyを使ってデータを取得
-#         gakkas = db.session.query(学科.学科ID, 学科.学科名).order_by(学科.学科ID).all()
-#         return gakkas
+def fetch_gakkas():
+    """List of gakkas."""
+    with get_conn() as conn:
+        # SQLAlchemyを使ってデータを取得
+        gakkas = db.session.query(学科.学科ID, 学科.学科名).order_by(学科.学科ID).all()
+        return gakkas
 
 # def fetch_recent_camlogs(limit=100):
 #     """Fetch recent cam logs."""
@@ -672,4 +672,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
