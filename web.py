@@ -615,11 +615,13 @@ def fetch_recent_camlogs(limit=100):
     ensure_camlog_table()  # カメラログテーブルが必要であれば作成する
     with get_conn() as conn:
         # SQLAlchemyを使ってデータを取得
+        # web2.py (fetch_recent_camlogs 関数内)
         camlogs = db.session.query(
-            カメラログ.id, カメラログ.記録時刻, カメラログ.ソース, カメラログ.ステータス,
-            func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),  # 空文字を代入
-            func.coalesce(カメラログ.スコア, None).label('スコア'),  # NULLを代入
-            func.coalesce(カメラログ.メッセージ, '').label('メッセージ')  # 空文字を代入
+            # ... その他の列
+            func.coalesce(カメラログ.マーカー名, '').label('マーカー名'),
+            # ✅ NULLの場合は数値の 0.0 を返すように修正
+            func.coalesce(カメラログ.スコア, 0.0).label('スコア'), 
+            func.coalesce(カメラログ.メッセージ, '').label('メッセージ')
         ).order_by(カメラログ.記録時刻.desc(), カメラログ.id.desc()).limit(limit).all()
         return camlogs
 
@@ -681,6 +683,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
