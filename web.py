@@ -34,6 +34,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True}
 
 db = SQLAlchemy(app)
+# 環境変数からパスワードを取得
+LOGS_PASSWORD = os.environ.get("LOGS_PASSWORD", "kojou")
 
 # =========================================================================
 # 出席判定定数
@@ -1367,6 +1369,62 @@ def submit():
         flash(f"エラーが発生しました: {e}")
 
     return redirect(url_for("index"))
+
+@app.route("/login", methods=["GET", "POST"])
+def logs_login():
+    # next パラメータ（ログイン後の遷移先）
+    next_url = request.args.get("next") or url_for("logs")
+    
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        if pw == LOGS_PASSWORD:
+            session["logs_ok"] = True
+            flash("ログインしました。")
+            return redirect(next_url)
+        else:
+            flash("パスワードが違います。")
+
+    # シンプルなログイン画面
+    return render_template_string("""
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ログイン</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;margin:20px;background:#f7f7fb;}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;max-width:420px;margin:40px auto;}
+label{display:block;font-size:12px;color:#555;margin:8px 0 4px;}
+input,button{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer;margin-top:10px}
+button:hover{filter:brightness(.95)}
+.flash{background:#fff3cd;border:1px solid #ffeeba;border-radius:8px;padding:10px;margin:0 0 12px}
+a{text-decoration:none;color:#2f6feb;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1 style="font-size:18px;margin:0 0 12px;">ログページ認証</h1>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash">
+        {% for m in messages %}{{m}}<br>{% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  <form method="post">
+    <input type="hidden" name="next" value="{{ request.args.get('next','') }}">
+    <label>パスワード</label>
+    <input type="password" name="password" required>
+    <button type="submit">ログイン</button>
+  </form>
+  <div style="margin-top:10px;"><a href="{{ url_for('index') }}">← 戻る</a></div>
+</div>
+</body>
+</html>
+""")
+
 
 @app.route("/logs")
 @require_logs_auth
