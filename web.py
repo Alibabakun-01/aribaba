@@ -1,5 +1,5 @@
 # main.py (Flask-SQLAlchemy ORM 統合版 - Render対応/安定化)
-
+import psycopg2
 import os
 from datetime import datetime, date, timedelta, time, timedelta
 from flask import Flask, render_template, request, url_for, jsonify, redirect, abort
@@ -14,6 +14,9 @@ from sqlalchemy.exc import IntegrityError  # ここでインポート
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///school3.db')
+# DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://user:password@localhost/dbname')
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Render の旧形式対策
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -569,20 +572,106 @@ def init_db_on_startup():
 # =========================================================================
 # ルーティング（必要に応じて増やしてください）
 # =========================================================================
+def get_conn():
+    """PostgreSQL接続"""
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
+
+def fetch_students():
+    """List of students with gakka name."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT s.学科ID, s.学生番号, s.生徒名, g.学科名
+            FROM 生徒 s
+            JOIN 学科 g ON g.学科ID = s.学科ID
+            ORDER BY s.学科ID, s.学生番号
+        """)
+        return cur.fetchall()
+
+def fetch_recent_logs(limit=50):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT i.記録ID, i.学生番号, i.生徒名,
+                   strftime('%Y-%m-%d %H:%M:%f', i.入退出時間) AS 入退出時間,
+                   i.入室区分, i.出席状態, i.学科ID, g.学科名
+            FROM 入退室 i
+            LEFT JOIN 学科 g ON g.学科ID = i.学科ID
+            ORDER BY i.入退出時間 DESC, i.記録ID DESC
+            LIMIT ?
+        """, (limit,))
+        return cur.fetchall()
+
+def fetch_gakkas():
+    """List of gakkas."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 学科ID, 学科名 FROM 学科 ORDER BY 学科ID")
+        return cur.fetchall()
+
+def fetch_recent_camlogs(limit=100):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, 記録時刻, ソース, ステータス,
+                   IFNULL(マーカー名,'') AS マーカー名,
+                   IFNULL(スコア,'' ) AS スコア,
+                   IFNULL(メッセージ,'' ) AS メッセージ
+            FROM カメラログ
+            ORDER BY 記録時刻 DESC, id DESC
+            LIMIT ?
+        """, (limit,))
+        return cur.fetchall()
+
+def fetch_timetable_1to4():
+    """TimeTable から 1～4限を取得（時限昇順）"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 時限, 開始時刻, 終了時刻
+            FROM TimeTable
+            WHERE 時限 BETWEEN 1 AND 4
+            ORDER BY 時限
+        """)
+        return cur.fetchall()
 
 @app.route("/")
-def index_page():
-    students_with_info = (
-        db.session.query(
-            生徒.学生番号,
-            生徒.生徒名,
-            学科.学科名,
-        )
-        .join(学科, 生徒.学科ID == 学科.学科ID)
-        .order_by(生徒.学生番号)
-        .all()
+def index():
+    # データを取得
+    students = fetch_students()
+    logs = fetch_recent_logs(limit=50)
+    gakkas = fetch_gakkas()
+    camlogs = fetch_recent_camlogs(limit=100)  # 新たに追加したデータ
+    tt_1to4 = fetch_timetable_1to4()           # 新たに追加したデータ
+
+    # index.htmlテンプレートをレンダリング
+    return render_template(
+        "index.html",  # テンプレートファイル名
+        students=students,
+        logs=logs,
+        gakkas=gakkas,
+        today=date.today().isoformat(),
+        db_path=os.path.abspath(DB_PATH),  # PostgreSQLに変更する場合はこの行を調整
+        camlogs=camlogs,
+        tt_1to4=tt_1to4
     )
-    return render_template("index.html", students=students_with_info)
+
+@app.route('/submit', methods=['POST'])
+def submit():
+    # 入退室記録の処理
+    return redirect(url_for('index'))  # 処理後、indexページにリダイレクト
+
+@app.route('/logs')
+def logs():
+    # ログ表示処理
+    return render_template('logs.html')  # logs.htmlはログページのテンプレート
+
+@app.route('/summary')
+def summary():
+    # 個人別サマリー表示処理
+    return render_template('summary.html')  # summary.htmlは個人別出席サマリーのテンプレート
+
 
 @app.route("/healthz")
 def healthz():
@@ -603,5 +692,3 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
-
-
