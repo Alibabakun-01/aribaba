@@ -1313,6 +1313,19 @@ def fetch_students():
             生徒.学科ID, 生徒.学生番号, 生徒.生徒名, 学科.学科名
         ).join(学科, 学科.学科ID == 生徒.学科ID).order_by(生徒.学科ID, 生徒.学生番号).all()
         return students
+
+def fetch_timetable_for_week(gakka_id, period, week_day):
+    """指定された学科ID、期、曜日の時間割を取得"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 時限, 科目ID, 教室ID, 備考
+            FROM 週時間割
+            WHERE 学科ID = %s AND 期 = %s AND 曜日 = %s
+            ORDER BY 時限
+        """, (gakka_id, period, week_day))
+        rows = cur.fetchall()
+    return [{"時限": row[0], "科目ID": row[1], "教室ID": row[2], "備考": row[3]} for row in rows]
 # =========================================================================
 # app
 # =========================================================================
@@ -1702,6 +1715,59 @@ def logs():
         today=date.today().isoformat() # date.today() を使用するため、datetime モジュールも必要
     )
 
+@app.route("/timetable")
+def timetable():
+    # クエリパラメータの取得（デフォルト値を設定）
+    gakka_id = request.args.get('gakka_id', 3, type=int)  # 学科ID（デフォルト 3）
+    period = request.args.get('period', 1, type=int)  # 期（デフォルト 1）
+    week_day = request.args.get('week_day', 1, type=int)  # 曜日（デフォルト 月曜日）
+
+    # 時間割データを取得
+    timetable_data = fetch_timetable_for_week(gakka_id, period, week_day)
+    
+    # HTMLを生成して返す
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>時間割</title>
+        <style>
+            body { font-family: system-ui, sans-serif; margin: 20px; background: #f4f4f4; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { padding: 8px; text-align: left; border: 1px solid #ddd; }
+            th { background-color: #f2f2f2; }
+            td { background-color: #fff; }
+        </style>
+    </head>
+    <body>
+        <h1>時間割</h1>
+        <h3>{{ period }}期 - {{ week_day }}曜日</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>時限</th>
+                    <th>科目ID</th>
+                    <th>教室ID</th>
+                    <th>備考</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in timetable_data %}
+                <tr>
+                    <td>{{ row['時限'] }}</td>
+                    <td>{{ row['科目ID'] }}</td>
+                    <td>{{ row['教室ID'] }}</td>
+                    <td>{{ row['備考'] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """, timetable_data=timetable_data, period=period, week_day=week_day)
+
 @app.route("/summary", methods=["GET", "POST"])
 def summary():
     """
@@ -1793,6 +1859,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
