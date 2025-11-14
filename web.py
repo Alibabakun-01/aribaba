@@ -3,7 +3,7 @@ import csv
 import psycopg2
 import os
 from typing import Optional, Any # <<< これを追加
-from datetime import datetime, date, timedelta, time, timedelta
+from datetime import datetime, date, timedelta, time
 from flask import Flask, render_template, render_template_string, request, url_for, jsonify, redirect, flash, session, abort, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
@@ -1599,6 +1599,93 @@ a{text-decoration:none;color:#2f6feb;}
 </html>
 """)
 
+@app.route("/basic_week")
+def basic_week():
+    # クエリパラメータを取得
+    year = request.args.get("year", 2025, type=int)
+    gakka = request.args.get("gakka_id", 3, type=int)
+    period = request.args.get("period", 1, type=int)
+
+    # データベースから情報を取得
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT w.曜日, y.曜日名, w.時限, tt.開始時刻, tt.終了時刻,
+                   COALESCE(sc.授業科目名, '') AS 科目名,
+                   COALESCE(cr.教室名, '')     AS 教室名,
+                   COALESCE(w.備考, '')        AS 備考
+            FROM 週時間割 AS w
+            JOIN 曜日マスタ AS y ON y.曜日ID = w.曜日
+            JOIN TimeTable   AS tt ON tt.時限 = w.時限
+            LEFT JOIN 授業科目 AS sc ON sc.授業科目ID = w.科目ID
+            LEFT JOIN 教室     AS cr ON cr.教室ID     = w.教室ID
+            WHERE w.年度 = %s AND w.学科ID = %s AND w.期 = %s
+            ORDER BY w.曜日, w.時限
+        """, (year, gakka, period))
+        rows = cur.fetchall()
+
+    # グリッド作成: 曜日(1-5) × 時限(1-5) → セル文字列「科目名（教室名）」
+    days = [1, 2, 3, 4, 5]  # 月〜金
+    periods = [1, 2, 3, 4, 5]
+    grid = { (d, p): "" for d in days for p in periods }
+    for r in rows:
+        key = (r["曜日"], r["時限"])
+        cell = r["科目名"] + (f"（{r['教室名']}）" if r["教室名"] else "")
+        grid[key] = cell
+
+    # 時間情報の取得
+    times = { p: {
+        "開始": next(r["開始時刻"] for r in rows if r["時限"] == p),
+        "終了": next(r["終了時刻"] for r in rows if r["時限"] == p)
+    } for p in set([r["時限"] for r in rows]) }
+
+    # HTMLを生成して返す
+    return render_template_string("""
+    <!doctype html>
+    <meta charset="utf-8">
+    <title>週間基本予定表</title>
+    <style>
+      body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+      table{border-collapse:collapse;width:100%;background:#fff;border-radius:12px;overflow:hidden}
+      th,td{border:1px solid #eee;padding:10px;font-size:14px}
+      th{background:#f3f6ff}
+      .time{color:#666;font-size:12px}
+      .head{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+      .head input,.head select{padding:6px 8px}
+      .small{color:#666;font-size:12px;margin-top:6px}
+    </style>
+    <div class="head">
+      <form method="get">
+        年度 <input type="number" name="year" value="{{year}}" style="width:90px">
+        学科ID <input type="number" name="gakka_id" value="{{gakka}}" style="width:80px">
+        期 <input type="number" name="period" value="{{period}}" style="width:60px">
+        <button>表示</button>
+      </form>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>時限</th>
+          {% for d in [1, 2, 3, 4, 5] %}
+            <th>{{ {1:"月",2:"火",3:"水",4:"木",5:"金"}[d] }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in [1, 2, 3, 4, 5] %}
+        <tr>
+          <th>{{p}}限<br><span class="time">
+            {{ times[p]["開始"] }}〜{{ times[p]["終了"] }}
+          </span></th>
+          {% for d in [1, 2, 3, 4, 5] %}
+            <td>{{ grid[(d,p)] }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="small">年度={{year}} / 学科ID={{gakka}} / 期={{period}}</div>
+    """, year=year, gakka=gakka, period=period, grid=grid, times=times)
 
 @app.route("/logs")
 @require_logs_auth
@@ -1706,6 +1793,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
