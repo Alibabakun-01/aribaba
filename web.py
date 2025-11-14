@@ -1494,6 +1494,40 @@ def api_add_by_names():
         # 何か例外が起きたら 500 を返す
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/camlog", methods=["POST"])
+def api_camlog():
+    """
+    Receive camera logs:
+      status: 'detected' | 'ok' | 'lost' (required)
+      marker, score, message, source(optional), ts(optional)
+    """
+    try:
+        # JSONまたはformデータを受け取る
+        data = request.get_json(silent=True) or request.form
+
+        source  = (data.get("source") or "armarka").strip()
+        status  = (data.get("status") or "").strip().lower()
+        marker  = (data.get("marker") or "").strip() or None
+        message = (data.get("message") or "").strip() or None
+        score   = data.get("score")
+        score   = float(score) if score not in (None, "") else None
+
+        ts = normalize_ts(data.get("ts"))
+        if not ts:
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # statusが必須
+        if not status:
+            return jsonify({"ok": False, "error": "status required"}), 400
+
+        # カメラログをデータベースに追加
+        add_camlog(ts, source, status, marker, score, message)
+
+        return jsonify({"ok": True})
+    
+    except Exception as e:
+        # エラーが発生した場合、500エラーとして返す
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/reset_logs", methods=["POST"])
 @require_logs_auth
@@ -1672,6 +1706,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
