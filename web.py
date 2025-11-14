@@ -1447,6 +1447,53 @@ def api_add():
         # 予期しないエラーは500として返す
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/add_by_names", methods=["POST"])
+def api_add_by_names():
+    """
+    学科名（gakka_name）と学生番号（student）で1レコード追加。
+    ts を省略した場合は TimeTable に基づいて「該当コマの開始1分前」に自動設定。
+    """
+    try:
+        # JSON / form 両対応
+        data = request.get_json(silent=True) or request.form
+
+        gakka_name = (data.get("gakka_name") or "").strip()
+        学生番号 = int(data.get("student"))
+
+        # 学科名 → 学科ID を取得
+        学科ID = get_gakka_id_by_name(gakka_name)
+        if 学科ID is None:
+            return jsonify({"ok": False, "error": "gakka not found"}), 400
+
+        # 学生番号 + 学科ID から正式な生徒名を取得
+        official_name = get_official_student(学生番号, 学科ID)
+        if not official_name:
+            return jsonify({"ok": False, "error": "student not found"}), 400
+
+        # ts が指定されていれば整形、なければ自動決定
+        ts = normalize_ts(data.get("ts"))
+        if not ts:
+            now = datetime.now()
+            rec = resolve_period_for(now)  # 時限情報を返す関数（既存前提）
+
+            if rec:
+                # 該当コマの開始 1 分前
+                start_dt = datetime.combine(date.today(), rec["start"])
+                ts_dt = start_dt - timedelta(minutes=1)
+                ts = ts_dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                # 時限情報が取れなかった場合は「今」
+                ts = now.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 入退室レコードを1件追加（中で PostgreSQL に insert する想定）
+        insert_attendance_input(学生番号, official_name, 学科ID, ts)
+
+        return jsonify({"ok": True})
+
+    except Exception as e:
+        # 何か例外が起きたら 500 を返す
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route("/reset_logs", methods=["POST"])
 @require_logs_auth
@@ -1625,6 +1672,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
