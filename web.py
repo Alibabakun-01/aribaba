@@ -1422,6 +1422,32 @@ def reset_camlogs():
         flash(f"⚠️ リセットエラー: {e}")
     return redirect(url_for("logs"))
 
+@app.route("/api/add", methods=["POST"])
+def api_add():
+    try:
+        # JSON または FORM のどちらにも対応
+        data = request.get_json(silent=True) or request.form
+
+        # パラメータの取得
+        学生番号 = int(data.get("student"))
+        学科ID = int(data.get("gakka"))
+        ts = normalize_ts(data.get("ts"))
+
+        # 学籍情報が正しいか確認（DBから名前を取得）
+        official_name = get_official_student(学生番号, 学科ID)
+        if not official_name:
+            return jsonify({"ok": False, "error": "student not found"}), 400
+
+        # 入退室記録の追加
+        insert_attendance_input(学生番号, official_name, 学科ID, ts)
+
+        return jsonify({"ok": True})
+
+    except Exception as e:
+        # 予期しないエラーは500として返す
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/reset_logs", methods=["POST"])
 @require_logs_auth
 def reset_logs():
@@ -1599,6 +1625,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
