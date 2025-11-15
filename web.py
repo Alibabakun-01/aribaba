@@ -731,11 +731,12 @@ def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
         cur.execute("""
             SELECT 入室区分
             FROM 入退室
-            WHERE 学生番号=? AND 学科ID=?
+            WHERE 学生番号 = %s AND 学科ID = %s
             ORDER BY 入退出時間 DESC, 記録ID DESC
             LIMIT 1
         """, (学生番号, 学科ID))
         row = cur.fetchone()
+        # RealDictCursor 想定なら row["入室区分"] でもOK
         return row[0] if row else None
 
 def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str, end_date: str):
@@ -3343,4 +3344,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
