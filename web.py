@@ -2877,6 +2877,32 @@ def tukijikanwari_csv():
             mimetype="text/csv; charset=utf-8",
         )
 
+@app.route("/kamoku_delete/<int:subject_id>", methods=["POST"])
+def kamoku_delete(subject_id: int):
+    """授業科目の削除（Render / PostgreSQL対応）"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+
+            # SQLite の ? → PostgreSQL の %s に変更
+            cur.execute("""
+                DELETE FROM 授業科目
+                WHERE 授業科目ID = %s
+            """, (subject_id,))
+
+            if cur.rowcount == 0:
+                flash("対象の科目が見つかりません。")
+            else:
+                flash("削除しました。")
+
+            conn.commit()
+
+    except Exception as e:
+        flash(f"削除エラー: {e}")
+
+    return redirect(url_for("kamoku_edit"))
+
+
 @app.route("/timetable")
 def timetable():
     # クエリパラメータの取得（デフォルト値を設定）
@@ -3133,15 +3159,3 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
-
-
-
-
