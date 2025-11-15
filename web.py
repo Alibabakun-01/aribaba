@@ -1,4 +1,5 @@
 # main.py (Flask-SQLAlchemy ORM 統合版 - Render対応/安定化)
+import calendar
 import csv
 import psycopg2
 import os
@@ -2085,6 +2086,38 @@ def kamoku_csv():
         }
     )
 
+@app.route("/tukijikanwari", methods=["GET"])
+def tukijikanwari():
+    """
+    月の予定表（列=曜日）カレンダー表示 + 授業科目編集ボタン
+    """
+    today = date.today()
+    selected_month = request.args.get("month", default=today.month, type=int)
+    selected_year  = request.args.get("year",  default=today.year,  type=int)
+
+    # Render 用に作り直した generate_monthly_schedule(year, month) を呼び出し
+    # 戻り値: { month: { day: [ {時限, 学科ID, 科目名, 教室ID, 備考}, ... ] } }
+    monthly_schedule = generate_monthly_schedule(
+        selected_month,
+        selected_year,
+    )
+    days_map = monthly_schedule.get(selected_month, {})
+
+    # 月曜始まりのカレンダー
+    cal = calendar.Calendar(firstweekday=0)  # 0 = 月曜日
+    month_weeks = cal.monthdayscalendar(selected_year, selected_month)
+
+    youbi_labels = ["月", "火", "水", "木", "金", "土", "日"]
+
+    return render_template(
+        "tukijikanwari.html",
+        selected_year=selected_year,
+        selected_month=selected_month,
+        month_weeks=month_weeks,
+        days_map=days_map,
+        youbi_labels=youbi_labels,
+    )
+
 @app.route("/kiki")
 def kiki():
     """期マスタテーブルの一覧を表示"""
@@ -2528,6 +2561,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
