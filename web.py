@@ -1730,6 +1730,188 @@ def logs():
         today=date.today().isoformat() # date.today() を使用するため、datetime モジュールも必要
     )
 
+@app.route("/kamoku", methods=["GET"])
+def kamoku():
+    """授業科目を選択して生徒別の出席情報を表示（CSV出力ボタン付き）"""
+
+    def parse_time_safe(s: str):
+        s = s.strip()
+        for fmt in ("%H:%M:%S", "%H:%M"):
+            try:
+                return datetime.strptime(s.zfill(5), fmt).time()
+            except ValueError:
+                continue
+        raise ValueError(f"Invalid time format: {s}")
+
+    # --- マスタ系の読み込み ---
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # 授業科目一覧
+        cur.execute("""
+            SELECT 授業科目ID, 授業科目名, 学科ID, 単位, 備考
+            FROM 授業科目
+            ORDER BY 授業科目ID
+        """)
+        subjects_all = cur.fetchall()
+
+        # 期マスタ（1〜4期） + 先頭に「全期」
+        cur.execute("""
+            SELECT 期ID, 期名
+            FROM 期マスタ
+            WHERE 期ID BETWEEN 1 AND 4
+            ORDER BY 期ID
+        """)
+        terms = [{"期ID": 0, "期名": "全期(1-4)"}] + [dict(r) for r in cur.fetchall()]
+
+        # 時限ごとの開始・終了
+        cur.execute("""
+            SELECT 時限, 開始時刻, 終了時刻
+            FROM TimeTable
+            ORDER BY 時限
+        """)
+        tt = {r["時限"]: (r["開始時刻"], r["終了時刻"]) for r in cur.fetchall()}
+
+    # --- クエリパラメータ ---
+    subject_id = request.args.get("subject_id", type=int)
+    term = request.args.get("term", type=int, default=0)
+
+    # 科目未選択 → 科目選択画面だけ
+    if not subject_id:
+        return render_template(
+            "kamoku.html",
+            subjects_all=subjects_all,
+            terms=terms
+        )
+
+    # --- 科目・生徒・授業計画など本体 ---
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 対象科目の名称と学科ID
+        cur.execute("""
+            SELECT 授業科目名, 学科ID
+            FROM 授業科目
+            WHERE 授業科目ID = %s
+        """, (subject_id,))
+        subj = cur.fetchone()
+        if not subj:
+            return f"授業科目ID {subject_id} が見つかりません。", 404
+        subject_name, gakka_id = subj["授業科目名"], subj["学科ID"]
+
+        # 学科に属する生徒一覧
+        cur.execute("""
+            SELECT 学生番号, 生徒名
+            FROM 生徒
+            WHERE 学科ID = %s
+            ORDER BY 学生番号
+        """, (gakka_id,))
+        students = cur.fetchall()
+
+        # 対象期リスト（0=全期なら1〜4）
+        term_list = [term] if term in (1, 2, 3, 4) else [1, 2, 3, 4]
+        q_marks = ",".join(["%s"] * len(term_list))
+
+        # 授業計画（日付・曜日・期）
+        cur.execute(
+            f"""
+            SELECT 日付, 授業曜日, 期
+            FROM 授業計画
+            WHERE 期 IN ({q_marks})
+            ORDER BY 日付
+            """,
+            term_list
+        )
+        plans = cur.fetchall()
+
+        # 週時間割から「どの期×曜日×時限がどの科目IDか」のマップ
+        cur.execute(
+            f"""
+            SELECT 期, 曜日, 時限, 科目ID
+            FROM 週時間割
+            WHERE 学科ID = %s AND 期 IN ({q_marks})
+            """,
+            (gakka_id, *term_list)
+        )
+        wk = {(r["期"], r["曜日"], r["時限"]): r["科目ID"] for r in cur.fetchall()}
+
+        # 授業が行われる日付と、その日の開始・終了時刻のリストを作成
+        def _to_date(s):
+            return datetime.strptime(s.replace('/', '-'), "%Y-%m-%d").date()
+
+        classes = []
+        for p in plans:
+            d = _to_date(p["日付"])
+            w = p["授業曜日"]
+            for period, (start_s, end_s) in tt.items():
+                if wk.get((p["期"], w, period)) == subject_id:
+                    start_dt = datetime.combine(d, parse_time_safe(start_s))
+                    end_dt = datetime.combine(d, parse_time_safe(end_s))
+                    classes.append((d, start_dt, end_dt))
+
+        # 対象期間の「入室」ログを取得
+        if classes:
+            dmin = min(c[0] for c in classes).isoformat()
+            dmax = max(c[0] for c in classes).isoformat()
+            cur.execute(
+                """
+                SELECT 学生番号, 入退出時間
+                FROM 入退室
+                WHERE 学科ID = %s
+                  AND 入室区分 = '入室'
+                  AND DATE(入退出時間) BETWEEN %s AND %s
+                """,
+                (gakka_id, dmin, dmax)
+            )
+            in_rows = cur.fetchall()
+        else:
+            in_rows = []
+
+    # --- 生徒×日付ごとの「入室時刻一覧」マップを作る ---
+    per_student_day_ins = {}
+    for r in in_rows:
+        dt = datetime.strptime(r["入退出時間"], "%Y-%m-%d %H:%M:%S")
+        key = (r["学生番号"], dt.date().isoformat())
+        per_student_day_ins.setdefault(key, []).append(dt)
+
+    today = datetime.now().date()
+    rows = []
+
+    # --- 生徒ごとに出席集計 ---
+    for s in students:
+        std_no, name = s["学生番号"], s["生徒名"]
+        cnt = {"出席": 0, "遅刻": 0, "欠席": 0, "未記入": 0, "総回数": 0}
+        for (d, start_dt, end_dt) in classes:
+            if d < today:
+                cnt["総回数"] += 1
+            logs = per_student_day_ins.get((std_no, d.isoformat()), [])
+            # 授業終了時刻までの最初の入室
+            first_in = next((x for x in logs if x <= end_dt), None)
+            if first_in is None:
+                status = "欠席" if d < today else "未記入"
+            else:
+                status = "出席" if first_in.time() <= start_dt.time() else "遅刻"
+            if status in cnt:
+                cnt[status] += 1
+
+        total = max(cnt["総回数"], 1)
+        cnt["出席率"] = round(cnt["出席"] / total * 100, 1)
+        rows.append(dict(学生番号=std_no, 生徒名=name, **cnt))
+
+    rows.sort(key=lambda r: r["学生番号"])
+    term_label = "全期(1-4)" if term == 0 else f"{term}期"
+
+    return render_template(
+        "kamoku2.html",
+        subjects_all=subjects_all,
+        terms=terms,
+        subject_id=subject_id,
+        subject_name=subject_name,
+        gakka_id=gakka_id,
+        term=term,
+        term_label=term_label,
+        rows=rows
+    )
+
 @app.route("/timetable")
 def timetable():
     # クエリパラメータの取得（デフォルト値を設定）
@@ -1874,3 +2056,4 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
