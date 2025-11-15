@@ -1734,6 +1734,268 @@ def schedule():
 
     return render_template("schedule.html", rows=rows_with_period_and_weekday)
 
+@app.route("/subject_rate", methods=["GET"])
+def subject_rate():
+    """
+    生徒を選ぶだけで該当学科の全科目の出席率を表示。
+    仕様:
+      - グラフ画像は出さず、行ごとの進捗バーのみ表示
+      - 「詳細を見る」→ /absent_reason に遷移（term, student_key, subject_id をクエリ付与）
+      - 今日より前の未記入は欠席、今日以降の未記入は欠席に含めない（未記入）
+      - 出席率の分母（総回数）は“今日より前の授業日”のみをカウント
+    """
+    import math
+    from datetime import datetime, date as date_cls
+
+    term = request.args.get("term", type=int, default=0)  # 0=全期
+    student_key = request.args.get("student_key")         # "学生番号-学科ID"
+
+    # UIマスタ
+    students = fetch_students()  # Row: 学科ID, 学生番号, 生徒名, 学科名
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 期ID, 期名
+            FROM 期マスタ
+            WHERE 期ID BETWEEN 1 AND 4
+            ORDER BY 期ID
+        """)
+        terms = [{"期ID": 0, "期名": "全期(1-4)"}] + [dict(r) for r in cur.fetchall()]
+
+    # termラベル
+    term_label = "全期(1-4)" if term == 0 else next(
+        (t["期名"] for t in terms if t["期ID"] == term),
+        "未知の期"
+    )
+
+    # 生徒未選択 → フォームのみ表示
+    if not student_key:
+        return render_template("subject_rate.html", students=students, terms=terms)
+
+    # 複合キー分解 "学生番号-学科ID"
+    try:
+        student_no_str, gakka_id_str = student_key.split("-", 1)
+        student_no = int(student_no_str)
+        gakka_id = int(gakka_id_str)
+    except Exception:
+        return "student_key の形式が不正です（例: 12345-3）。", 400
+
+    # ===== マスタ/必要データ取得 =====
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 生徒氏名
+        cur.execute("""
+            SELECT 生徒名
+            FROM 生徒
+            WHERE 学生番号 = %s AND 学科ID = %s
+        """, (student_no, gakka_id))
+        row = cur.fetchone()
+        if not row:
+            return "生徒マスタに存在しません（学生番号+学科ID）。", 400
+        student_name = row["生徒名"]
+
+        term_list = [term] if term in (1, 2, 3, 4) else [1, 2, 3, 4]
+        q_marks = ",".join(["%s"] * len(term_list))
+
+        # 授業計画（平日のみ）
+        cur.execute(
+            f"""
+            SELECT 日付, 授業曜日, 期
+            FROM 授業計画
+            WHERE 期 IN ({q_marks}) AND 授業曜日 BETWEEN 1 AND 5
+            ORDER BY 日付 ASC
+            """,
+            term_list,
+        )
+        plan_days = cur.fetchall()
+
+        # 週時間割（学科×期×平日）
+        cur.execute(
+            f"""
+            SELECT 期, 曜日, 時限, 科目ID, 教室ID, 備考
+            FROM 週時間割
+            WHERE 学科ID = %s AND 期 IN ({q_marks}) AND 曜日 BETWEEN 1 AND 5
+            """,
+            (gakka_id, *term_list),
+        )
+        wk = {
+            (r["期"], r["曜日"], r["時限"]): {
+                "科目ID": r["科目ID"],
+                "教室ID": r["教室ID"],
+                "教員名": (r["備考"] or "").strip(),
+            }
+            for r in cur.fetchall()
+        }
+
+        # 科目名／教室名
+        cur.execute("SELECT 授業科目ID, 授業科目名 FROM 授業科目")
+        subj_map = {r["授業科目ID"]: r["授業科目名"] for r in cur.fetchall()}
+
+        cur.execute("SELECT 教室ID, 教室名 FROM 教室")
+        room_map = {r["教室ID"]: r["教室名"] for r in cur.fetchall()}
+
+        # TimeTable
+        cur.execute("""
+            SELECT 時限, 開始時刻, 終了時刻
+            FROM TimeTable
+            ORDER BY 時限
+        """)
+        tt = {r["時限"]: (r["開始時刻"], r["終了時刻"]) for r in cur.fetchall()}
+
+        # 入室ログ（日付範囲）一括
+        def _to_date(s):
+            # PostgreSQL の DATE 型 / TIMESTAMP 型にも対応
+            if isinstance(s, date_cls):
+                return s
+            if isinstance(s, datetime):
+                return s.date()
+            s2 = s.replace("/", "-")
+            return datetime.strptime(s2, "%Y-%m-%d").date()
+
+        if plan_days:
+            dmin = _to_date(plan_days[0]["日付"])
+            dmax = _to_date(plan_days[-1]["日付"])
+            if dmax < dmin:
+                dmin, dmax = dmax, dmin
+
+            cur.execute(
+                """
+                SELECT 入退出時間
+                FROM 入退室
+                WHERE 学生番号 = %s
+                  AND 学科ID   = %s
+                  AND 入室区分 = '入室'
+                  AND DATE(入退出時間) BETWEEN %s AND %s
+                ORDER BY 入退出時間 ASC
+                """,
+                (student_no, gakka_id, dmin.isoformat(), dmax.isoformat()),
+            )
+            in_rows = cur.fetchall()
+        else:
+            in_rows = []
+
+    # 日付→その日の入室時刻リスト
+    per_day_ins = {}
+    for r in in_rows:
+        dt = datetime.strptime(r["入退出時間"], "%Y-%m-%d %H:%M:%S")
+        per_day_ins.setdefault(dt.date().isoformat(), []).append(dt)
+
+    def _parse_hms(s):
+        # "HH:MM:SS" or "HH:MM" を time に
+        s = s.strip()
+        if len(s) == 8:
+            return datetime.strptime(s, "%H:%M:%S").time()
+        return datetime.strptime(s, "%H:%M").time()
+
+    # ===== 集計 =====
+    stats = {}  # subj_id -> dict
+    today = datetime.now().date()
+
+    for p in plan_days:
+        # 日付/曜日の正規化
+        d = _to_date(p["日付"])
+        w = p["授業曜日"]
+        t_in_day = per_day_ins.get(d.isoformat(), [])
+
+        for period, (start_s, end_s) in tt.items():
+            key = (p["期"], w, period)
+            if key not in wk or not wk[key]["科目ID"]:
+                continue
+
+            subj_id = wk[key]["科目ID"]
+            subj_name = subj_map.get(subj_id, f"科目{subj_id}")
+            teacher = wk[key]["教員名"]
+            room = room_map.get(wk[key]["教室ID"], "")
+
+            start_dt = datetime.combine(d, _parse_hms(start_s))
+            end_dt = datetime.combine(d, _parse_hms(end_s))
+
+            first_in = next((x for x in t_in_day if x <= end_dt), None)
+
+            # === 欠席/未記入/出席/遅刻の判定 ===
+            if first_in is None:
+                if d < today:
+                    status = "欠席"     # 既に終わった授業日の未記入は欠席
+                else:
+                    status = "未記入"   # 今日以降は分母に入れない
+            else:
+                status = "出席" if first_in.time() <= start_dt.time() else "遅刻"
+
+            # === 集計レコード取得/初期化 ===
+            s = stats.setdefault(
+                subj_id,
+                {
+                    "科目名": subj_name,
+                    "教員名": teacher,
+                    "教室例": room,
+                    "出席": 0,
+                    "遅刻": 0,
+                    "欠席": 0,
+                    "未記入": 0,
+                    "総回数": 0,
+                    "必要出席回数": 0,
+                    "欠席日": set(),
+                },
+            )
+
+            # 教員/教室は空なら上書き
+            if not s["教員名"] and teacher:
+                s["教員名"] = teacher
+            if not s["教室例"] and room:
+                s["教室例"] = room
+
+            # 総回数は「今日より前の授業日」だけカウント（=分母）
+            held = d < today
+            if held:
+                s["総回数"] += 1
+
+            # カウント（未記入は分母・欠席どちらにも入らない）
+            if status in ("出席", "遅刻", "欠席"):
+                s[status] += 1
+                if status == "欠席":
+                    s["欠席日"].add(d.isoformat())
+            else:
+                s["未記入"] += 1
+
+    # テーブル行を構成
+    rows = []
+    for subj_id, s in stats.items():
+        total = max(s["総回数"], 1)  # 0割防止
+        required = math.ceil(s["総回数"] * 0.8)
+        rate = (s["出席"] / total) * 100.0
+        rows.append(
+            {
+                "科目ID": subj_id,
+                "科目名": s["科目名"],
+                "教員名": s["教員名"],
+                "教室例": s["教室例"],
+                "出席": s["出席"],
+                "遅刻": s["遅刻"],
+                "欠席": s["欠席"],
+                "未記入": s["未記入"],
+                "総回数": s["総回数"],
+                "必要出席回数": required,
+                "出席率": rate,
+                "欠席日一覧": sorted(list(s["欠席日"])),
+            }
+        )
+
+    # 出席率降順 → 科目名昇順
+    rows.sort(key=lambda r: (-r["出席率"], r["科目名"]))
+
+    # 画面描画
+    return render_template(
+        "subject_rate2.html",
+        terms=terms,
+        students=students,
+        term=term,
+        student_key=student_key,
+        student_name=student_name,
+        term_label=term_label,
+        rows=rows,
+    )
+
 
 @app.route("/weekly_schedule")
 def weekly_schedule():
@@ -2266,6 +2528,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
