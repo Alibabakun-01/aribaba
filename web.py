@@ -1700,6 +1700,21 @@ def basic_week():
     <div class="small">年度={{year}} / 学科ID={{gakka}} / 期={{period}}</div>
     """, year=year, gakka=gakka, period=period, grid=grid, times=times)
 
+@app.route("/api/reset", methods=["POST"])
+def api_reset():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            # PostgreSQL では DELETE 文は SQLite と同じで OK
+            cur.execute("DELETE FROM 入退室;")
+            conn.commit()
+
+        return jsonify({"ok": True, "message": "logs cleared"})
+
+    except Exception as e:
+        # もし何かトラブルが起きたら 500 を返す
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/logs")
 @require_logs_auth
 def logs():
@@ -1859,14 +1874,3 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
-
-
-
