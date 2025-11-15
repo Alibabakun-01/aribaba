@@ -736,8 +736,8 @@ def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
             LIMIT 1
         """, (学生番号, 学科ID))
         row = cur.fetchone()
-        # RealDictCursor 想定なら row["入室区分"] でもOK
-        return row[0] if row else None
+        # RealDictCursor を使っているので、row["入室区分"] で取り出す
+        return row["入室区分"] if row else None
 
 def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """期間内の各日の最初の入室ログを取得します（ORM/PostgreSQL版）。"""
@@ -882,7 +882,7 @@ def fetch_absent_reasons_map(学生番号: int, 学科ID: int, 科目ID: int):
         cur.execute("""
             SELECT 日付, 理由区分, IFNULL(その他理由,'') AS その他理由
             FROM 欠席理由
-            WHERE 学生番号=? AND 学科ID=? AND 科目ID=?
+            WHERE 学生番号= %s AND 学科ID= %s AND 科目ID= %s
         """, (学生番号, 学科ID, 科目ID))
         rows = cur.fetchall()
     return { r["日付"]: {"理由区分": r["理由区分"], "その他理由": r["その他理由"]} for r in rows }
@@ -927,7 +927,7 @@ def generate_monthly_schedule(selected_month=None, selected_year=None):
             cur.execute("""
               SELECT 日付, 学科ID, 時限, 科目ID, 教室ID, 備考
               FROM 特別時間割
-              WHERE strftime('%Y', 日付)=? AND strftime('%m', 日付)=?
+              WHERE strftime('%Y', 日付)= %s AND strftime('%m', 日付)= %s
             """, (str(selected_year), f"{selected_month:02d}"))
             for r in cur.fetchall():
                 d = datetime.strptime(r["日付"], "%Y-%m-%d").date()
@@ -1022,7 +1022,7 @@ def fetch_daily_inout(学生番号: int, 学科ID: int, start_date: str, end_dat
                 DATE(入退出時間,'localtime') AS 日付,
                 MIN(入退出時間) AS 最初入室時刻
               FROM 入退室
-              WHERE 学生番号=? AND 学科ID=? AND 入室区分='入室'
+              WHERE 学生番号= %s AND 学科ID= %s AND 入室区分='入室'
                 AND DATE(入退出時間,'localtime') BETWEEN ? AND ?
               GROUP BY DATE(入退出時間,'localtime')
             ),
@@ -1031,7 +1031,7 @@ def fetch_daily_inout(学生番号: int, 学科ID: int, start_date: str, end_dat
                 DATE(入退出時間,'localtime') AS 日付,
                 MAX(入退出時間) AS 最後退出時刻
               FROM 入退室
-              WHERE 学生番号=? AND 学科ID=? AND 入室区分='退出'
+              WHERE 学生番号= %s AND 学科ID= %s AND 入室区分='退出'
                 AND DATE(入退出時間,'localtime') BETWEEN ? AND ?
               GROUP BY DATE(入退出時間,'localtime')
             ),
@@ -3344,5 +3344,6 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
