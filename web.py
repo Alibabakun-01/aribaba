@@ -2453,6 +2453,73 @@ button:hover{filter:brightness(.95)}
 </div>
 """, row=row, gakkas=gakkas)
 
+@app.route("/kamoku_add", methods=["POST"])
+def kamoku_add():
+    """授業科目の新規追加（Render / PostgreSQL 対応版）"""
+    name = (request.form.get("name") or "").strip()
+    gakka_id = _parse_int(request.form.get("gakka_id"))
+    unit = _parse_int(request.form.get("unit"), 0)
+    note = (request.form.get("note") or "").strip()
+
+    if not name or gakka_id is None:
+        flash("入力が不足しています。")
+        return redirect(url_for("kamoku_edit"))
+
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            # SMALLINT 主キーを自前採番するヘルパー関数（既存実装を利用）
+            new_id = _next_subject_id(conn)
+
+            cur.execute("""
+                INSERT INTO 授業科目
+                  (授業科目ID, 授業科目名, 学科ID, 単位, 学科フラグ, 備考)
+                VALUES (%s, %s, %s, %s, 0, %s)
+            """, (new_id, name, gakka_id, unit, note))
+            conn.commit()
+
+        flash(f"科目を追加しました（ID: {new_id}）。")
+    except Exception as e:
+        flash(f"追加エラー: {e}")
+
+    return redirect(url_for("kamoku_edit"))
+
+
+@app.route("/kamoku_update/<int:subject_id>", methods=["POST"])
+def kamoku_update(subject_id: int):
+    """授業科目の更新（Render / PostgreSQL 対応版）"""
+    name = (request.form.get("name") or "").strip()
+    gakka_id = _parse_int(request.form.get("gakka_id"))
+    unit = _parse_int(request.form.get("unit"), 0)
+    note = (request.form.get("note") or "").strip()
+
+    if not name or gakka_id is None:
+        flash("入力が不足しています。")
+        return redirect(url_for("kamoku_edit_form", subject_id=subject_id))
+
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE 授業科目
+                SET 授業科目名 = %s,
+                    学科ID     = %s,
+                    単位       = %s,
+                    備考       = %s
+                WHERE 授業科目ID = %s
+            """, (name, gakka_id, unit, note, subject_id))
+
+            if cur.rowcount == 0:
+                flash("対象の科目が見つかりません。")
+            else:
+                flash("更新しました。")
+
+            conn.commit()
+    except Exception as e:
+        flash(f"更新エラー: {e}")
+
+    return redirect(url_for("kamoku_edit"))
+
 @app.route("/absent_reason", methods=["GET", "POST"])
 def absent_reason():
     """
@@ -3066,6 +3133,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
