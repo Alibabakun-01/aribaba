@@ -2086,6 +2086,36 @@ def kamoku_csv():
         }
     )
 
+@app.route("/kamoku_edit", methods=["GET"])
+def kamoku_edit():
+    """授業科目一覧 + 新規追加フォーム"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 授業科目一覧（学科名付き）
+        cur.execute("""
+            SELECT 
+              s.授業科目ID,
+              s.授業科目名,
+              s.学科ID      AS 科目学科ID,   -- 学科テーブルと衝突しないように別名
+              s.単位,
+              s.備考,
+              g.学科名
+            FROM 授業科目 s
+            LEFT JOIN 学科 g ON g.学科ID = s.学科ID
+            ORDER BY s.授業科目ID
+        """)
+        subjects = cur.fetchall()
+
+    # 学科一覧（プルダウン用） ※これは別関数でPostgreSQL対応済み想定
+    gakkas = fetch_gakkas()
+
+    return render_template(
+        "kamoku_edit.html",
+        subjects=subjects,
+        gakkas=gakkas,
+    )
+
 @app.route("/tukijikanwari", methods=["GET"])
 def tukijikanwari():
     """
@@ -2346,6 +2376,82 @@ def kamoku():
         term_label=term_label,
         rows=rows
     )
+
+@app.route("/kamoku_edit/<int:subject_id>", methods=["GET"])
+def kamoku_edit_form(subject_id: int):
+    """授業科目の編集フォーム（Render / PostgreSQL 対応版）"""
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # PostgreSQL では ? → %s
+        cur.execute("""
+            SELECT 授業科目ID, 授業科目名, 学科ID, 単位, 備考
+            FROM 授業科目
+            WHERE 授業科目ID = %s
+        """, (subject_id,))
+        row = cur.fetchone()
+
+        if not row:
+            abort(404)
+
+        # 学科一覧（プルダウン）
+        gakkas = fetch_gakkas()
+
+    return render_template_string("""
+<!doctype html>
+<meta charset="utf-8"><title>授業科目の編集</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+h1{margin:0 0 12px}
+input,select,button{padding:8px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer}
+button:hover{filter:brightness(.95)}
+.flex{display:flex;gap:10px;flex-wrap:wrap}
+.small{color:#666;font-size:12px}
+</style>
+
+<div class="card">
+  <h1>授業科目の編集（ID: {{ row['授業科目ID'] }}）</h1>
+  <a href="{{ url_for('kamoku_edit') }}" class="small">← 一覧に戻る</a>
+</div>
+
+<div class="card">
+  <form method="post" action="{{ url_for('kamoku_update', subject_id=row['授業科目ID']) }}" class="flex">
+    <div>
+      <label>授業科目名</label><br>
+      <input name="name" value="{{ row['授業科目名'] }}" required style="min-width:280px">
+    </div>
+
+    <div>
+      <label>学科</label><br>
+      <select name="gakka_id" required>
+        {% for g in gakkas %}
+          <option value="{{ g['学科ID'] }}"
+            {% if g['学科ID']==row['学科ID'] %}selected{% endif %}>
+            {{ g['学科名'] }}（ID:{{ g['学科ID'] }}）
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>単位</label><br>
+      <input name="unit" type="number" min="0" value="{{ row['単位'] or 0 }}" style="width:90px">
+    </div>
+
+    <div style="flex:1 1 320px">
+      <label>備考</label><br>
+      <input name="note" value="{{ row['備考'] or '' }}">
+    </div>
+
+    <div style="align-self:flex-end">
+      <button type="submit">更新</button>
+    </div>
+  </form>
+</div>
+""", row=row, gakkas=gakkas)
 
 @app.route("/absent_reason", methods=["GET", "POST"])
 def absent_reason():
@@ -2960,6 +3066,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
