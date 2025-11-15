@@ -1701,6 +1701,82 @@ def basic_week():
     <div class="small">年度={{year}} / 学科ID={{gakka}} / 期={{period}}</div>
     """, year=year, gakka=gakka, period=period, grid=grid, times=times)
 
+@app.route("/schedule")
+def schedule():
+    """授業計画テーブルの一覧を表示"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 期マスタ
+        cur.execute("SELECT 期ID, 期名 FROM 期マスタ")
+        periods = {row["期ID"]: row["期名"] for row in cur.fetchall()}
+
+        # 曜日マスタ
+        cur.execute("SELECT 曜日ID, 曜日名 FROM 曜日マスタ")
+        weekdays = {row["曜日ID"]: row["曜日名"] for row in cur.fetchall()}
+
+        # 授業計画
+        cur.execute("""
+            SELECT 日付, 期, 授業曜日, 備考
+            FROM 授業計画
+            ORDER BY DATE(日付)  -- 日付順に並べる（PostgreSQLでもOK）
+        """)
+        rows = cur.fetchall()
+
+    # 授業計画の期IDを期名、授業曜日IDを曜日名に変換
+    rows_with_period_and_weekday = []
+    for row in rows:
+        # RealDictCursor 前提なので row はすでに dict
+        row_dict = dict(row)
+        row_dict["期名"] = periods.get(row_dict["期"], "不明")
+        row_dict["曜日名"] = weekdays.get(row_dict["授業曜日"], "不明")
+        rows_with_period_and_weekday.append(row_dict)
+
+    return render_template("schedule.html", rows=rows_with_period_and_weekday)
+
+
+@app.route("/weekly_schedule")
+def weekly_schedule():
+    """週時間割テーブルの一覧を表示"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 授業科目
+        cur.execute("SELECT 授業科目ID, 授業科目名 FROM 授業科目")
+        subjects = {row["授業科目ID"]: row["授業科目名"] for row in cur.fetchall()}
+
+        # 教室
+        cur.execute("SELECT 教室ID, 教室名 FROM 教室")
+        classrooms = {row["教室ID"]: row["教室名"] for row in cur.fetchall()}
+
+        # 期マスタ
+        cur.execute("SELECT 期ID, 期名 FROM 期マスタ")
+        periods = {row["期ID"]: row["期名"] for row in cur.fetchall()}
+
+        # 曜日マスタ
+        cur.execute("SELECT 曜日ID, 曜日名 FROM 曜日マスタ")
+        weekdays = {row["曜日ID"]: row["曜日名"] for row in cur.fetchall()}
+
+        # 週時間割
+        cur.execute("""
+            SELECT 年度, 学科ID, 期, 曜日, 時限, 科目ID, 教室ID, 備考
+            FROM 週時間割
+            ORDER BY 曜日, 時限
+        """)
+        rows = cur.fetchall()
+
+    # 週時間割のデータを整形
+    rows_with_details = []
+    for row in rows:
+        row_dict = dict(row)  # RealDictCursor なので dict にしてOK
+        row_dict["科目名"] = subjects.get(row_dict["科目ID"], "不明")
+        row_dict["教室名"] = classrooms.get(row_dict["教室ID"], "不明")
+        row_dict["期名"] = periods.get(row_dict["期"], "不明")
+        row_dict["曜日名"] = weekdays.get(row_dict["曜日"], "不明")
+        rows_with_details.append(row_dict)
+
+    return render_template("weekly_schedule.html", rows=rows_with_details)
+
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     try:
@@ -1976,6 +2052,76 @@ def kamoku():
         rows=rows
     )
 
+@app.route("/jikanwari", methods=["GET"])
+def jikanwari():
+    """選択した期（1期〜4期）の時間割を曜日 × 時限の形式で表示"""
+
+    # クエリパラメータから選択された期を取得（デフォルトは1期）
+    selected_term = request.args.get("term", 1, type=int)
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 曜日マスタを取得
+        cur.execute("SELECT 曜日ID, 曜日名 FROM 曜日マスタ")
+        weekdays = {row["曜日ID"]: row["曜日名"] for row in cur.fetchall()}
+
+        # 週時間割のデータを取得（選択された期に該当するデータ）
+        cur.execute(
+            """
+            SELECT 年度, 学科ID, 期, 曜日, 時限, 科目ID, 教室ID, 備考
+            FROM 週時間割
+            WHERE 期 = %s
+            ORDER BY 時限, 曜日
+            """,
+            (selected_term,),
+        )
+        rows = cur.fetchall()
+
+        # 授業科目と教室情報を取得
+        cur.execute("SELECT 授業科目ID, 授業科目名 FROM 授業科目")
+        subjects = {row["授業科目ID"]: row["授業科目名"] for row in cur.fetchall()}
+
+        cur.execute("SELECT 教室ID, 教室名 FROM 教室")
+        classrooms = {row["教室ID"]: row["教室名"] for row in cur.fetchall()}
+
+        # 期マスタ（1〜4期）を取得
+        cur.execute("SELECT 期ID, 期名 FROM 期マスタ WHERE 期ID BETWEEN 1 AND 4 ORDER BY 期ID")
+        terms = {row["期ID"]: row["期名"] for row in cur.fetchall()}
+
+    # 時間割を「時限 × 曜日」の形式に整形（1〜5限 × 全曜日）
+    # schedule[時限][曜日名] = { 科目, 教員, 教室 }
+    schedule = {
+        period: {
+            weekdays.get(d, "不明"): {"科目": "", "教員": "", "教室": ""}
+            for d in weekdays  # d は 曜日ID
+        }
+        for period in range(1, 6)
+    }
+
+    # 時間割データを埋め込む
+    for row in rows:
+        day_name = weekdays.get(row["曜日"], "不明")
+        period = row["時限"]
+        subject = subjects.get(row["科目ID"], "不明")
+        classroom = classrooms.get(row["教室ID"], "不明")
+        teacher = row["備考"] or ""  # 備考欄を教員名として利用（空なら空文字）
+
+        if period in schedule and day_name in schedule[period]:
+            schedule[period][day_name] = {
+                "科目": subject,
+                "教員": teacher,
+                "教室": classroom,
+            }
+
+    return render_template(
+        "jikanwari.html",
+        weekdays=weekdays,        # {曜日ID: 曜日名}
+        schedule=schedule,        # 時限×曜日の2次元マップ
+        terms=terms,              # {期ID: 期名}
+        selected_term=selected_term,
+    )
+
 @app.route("/timetable")
 def timetable():
     # クエリパラメータの取得（デフォルト値を設定）
@@ -2120,6 +2266,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
