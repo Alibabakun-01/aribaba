@@ -4,7 +4,7 @@ import csv
 import psycopg2
 import os
 from typing import Optional, Any # <<< これを追加
-from datetime import datetime, date, timedelta, time
+from datetime import datetime, timedelta, time, date as date_cls
 from flask import Flask, render_template, render_template_string, request, url_for, jsonify, redirect, flash, session, abort, send_file, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
@@ -2347,6 +2347,226 @@ def kamoku():
         rows=rows
     )
 
+@app.route("/absent_reason", methods=["GET", "POST"])
+def absent_reason():
+    """
+    科目ごとの欠席日に対して理由を登録するページ。
+    必須: term(0=全期), student_key("学生番号-学科ID"), subject_id(科目ID)
+    """
+    term = request.values.get("term", type=int, default=0)
+    student_key = request.values.get("student_key")
+    subject_id = request.values.get("subject_id", type=int)
+
+    if not student_key or subject_id is None:
+        return "必要なパラメータが不足しています (student_key, subject_id)", 400
+
+    try:
+        student_no_str, gakka_id_str = student_key.split("-", 1)
+        学生番号 = int(student_no_str)
+        学科ID = int(gakka_id_str)
+    except Exception:
+        return "student_key の形式が不正です（例: 12345-3）。", 400
+
+    # ===== 生徒名・科目名・マスタの取得 =====
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 生徒名
+        cur.execute(
+            """
+            SELECT 生徒名
+            FROM 生徒
+            WHERE 学生番号 = %s AND 学科ID = %s
+            """,
+            (学生番号, 学科ID),
+        )
+        row = cur.fetchone()
+        if not row:
+            return "生徒マスタに存在しません。", 400
+        student_name = row["生徒名"]
+
+        # 科目名
+        cur.execute(
+            """
+            SELECT 授業科目名
+            FROM 授業科目
+            WHERE 授業科目ID = %s
+            """,
+            (subject_id,),
+        )
+        row2 = cur.fetchone()
+        subject_name = row2["授業科目名"] if row2 else f"科目{subject_id}"
+
+        # 期マスタ（ラベル用）
+        cur.execute(
+            """
+            SELECT 期ID, 期名
+            FROM 期マスタ
+            WHERE 期ID BETWEEN 1 AND 4
+            ORDER BY 期ID
+            """
+        )
+        terms = [{"期ID": 0, "期名": "全期(1-4)"}] + [dict(r) for r in cur.fetchall()]
+        term_label = (
+            "全期(1-4)"
+            if term == 0
+            else next((t["期名"] for t in terms if t["期ID"] == term), "未知の期")
+        )
+
+        # 絞り込む期リスト
+        term_list = [term] if term in (1, 2, 3, 4) else [1, 2, 3, 4]
+        q_marks = ",".join(["%s"] * len(term_list))
+
+        # 授業計画（該当期×平日）
+        cur.execute(
+            f"""
+            SELECT 日付, 授業曜日, 期
+            FROM 授業計画
+            WHERE 期 IN ({q_marks}) AND 授業曜日 BETWEEN 1 AND 5
+            ORDER BY 日付 ASC
+            """,
+            term_list,
+        )
+        plan_days = cur.fetchall()
+
+        # 週時間割（指定科目のみ）
+        cur.execute(
+            f"""
+            SELECT 期, 曜日, 時限, 科目ID
+            FROM 週時間割
+            WHERE 学科ID = %s AND 期 IN ({q_marks}) AND 曜日 BETWEEN 1 AND 5
+              AND 科目ID = %s
+            """,
+            (学科ID, *term_list, subject_id),
+        )
+        wk = {(r["期"], r["曜日"], r["時限"]): True for r in cur.fetchall()}
+
+        # TimeTable
+        cur.execute(
+            """
+            SELECT 時限, 開始時刻, 終了時刻
+            FROM TimeTable
+            ORDER BY 時限
+            """
+        )
+        tt = {r["時限"]: (r["開始時刻"], r["終了時刻"]) for r in cur.fetchall()}
+
+        # 入室ログ（対象期間）
+        def _to_date(v):
+            if isinstance(v, date_cls):
+                return v
+            if isinstance(v, datetime):
+                return v.date()
+            s = str(v)
+            s2 = s.replace("/", "-")
+            return datetime.strptime(s2, "%Y-%m-%d").date()
+
+        if plan_days:
+            dmin = _to_date(plan_days[0]["日付"])
+            dmax = _to_date(plan_days[-1]["日付"])
+            if dmax < dmin:
+                dmin, dmax = dmax, dmin
+
+            cur.execute(
+                """
+                SELECT 入退出時間
+                FROM 入退室
+                WHERE 学生番号 = %s
+                  AND 学科ID   = %s
+                  AND 入室区分 = '入室'
+                  AND DATE(入退出時間) BETWEEN %s AND %s
+                ORDER BY 入退出時間 ASC
+                """,
+                (学生番号, 学科ID, dmin.isoformat(), dmax.isoformat()),
+            )
+            in_rows = cur.fetchall()
+        else:
+            in_rows = []
+
+    # ===== 日付→その日の入室リスト =====
+    per_day_ins = {}
+    for r in in_rows:
+        dt = datetime.strptime(r["入退出時間"], "%Y-%m-%d %H:%M:%S")
+        per_day_ins.setdefault(dt.date().isoformat(), []).append(dt)
+
+    def _parse_hms(s: str):
+        s = s.strip()
+        return (
+            datetime.strptime(s, "%H:%M:%S").time()
+            if len(s) == 8
+            else datetime.strptime(s, "%H:%M").time()
+        )
+
+    # ===== 欠席日抽出 =====
+    absent_dates = []
+    for p in plan_days:
+        d = _to_date(p["日付"])
+        w = p["授業曜日"]
+        t_in_day = per_day_ins.get(d.isoformat(), [])
+        found_subject_on_day = False
+        attended_this_subject = False
+
+        for period, (start_s, end_s) in tt.items():
+            key = (p["期"], w, period)
+            if key not in wk:
+                continue
+            found_subject_on_day = True
+            end_dt = datetime.combine(d, _parse_hms(end_s))
+            # この日の最初の入室が終了時刻までにあるかどうか
+            first_in = next((x for x in t_in_day if x <= end_dt), None)
+            if first_in is not None:
+                attended_this_subject = True
+                break  # その日のこの科目は欠席ではない
+
+        if found_subject_on_day and not attended_this_subject:
+            absent_dates.append(d.isoformat())
+
+    # ===== POST: 理由の保存 =====
+    if request.method == "POST":
+        saved = 0
+        # name="reason[YYYY-MM-DD]" / name="other[YYYY-MM-DD]"
+        for k in request.form.keys():
+            if not k.startswith("reason[") or not k.endswith("]"):
+                continue
+            day = k[len("reason[") : -1]
+            reason = request.form.get(k, "")
+            other_text = (
+                request.form.get(f"other[{day}]", "").strip()
+                if reason == "その他"
+                else ""
+            )
+            if day in absent_dates and reason in ("病欠", "公欠", "寝坊", "その他"):
+                upsert_absent_reason(学生番号, 学科ID, subject_id, day, reason, other_text)
+                saved += 1
+
+        flash(f"{saved} 件保存しました。")
+        # 保存後も同ページに戻る
+        return redirect(
+            url_for(
+                "absent_reason",
+                term=term,
+                student_key=student_key,
+                subject_id=subject_id,
+            )
+        )
+
+    # 既存の理由（プリセット）
+    preset = fetch_absent_reasons_map(学生番号, 学科ID, subject_id)
+
+    # 画面レンダリング
+    return render_template(
+        "absent_reason.html",
+        term=term,
+        student_key=student_key,
+        subject_id=subject_id,
+        student_name=student_name,
+        gakka_id=学科ID,
+        subject_name=subject_name,
+        term_label=term_label,
+        absent_dates=absent_dates,
+        preset=preset,
+    )
+
 @app.route("/jikanwari", methods=["GET"])
 def jikanwari():
     """選択した期（1期〜4期）の時間割を曜日 × 時限の形式で表示"""
@@ -2740,6 +2960,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
