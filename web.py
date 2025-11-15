@@ -2902,6 +2902,190 @@ def kamoku_delete(subject_id: int):
 
     return redirect(url_for("kamoku_edit"))
 
+@app.route("/edit_subject_dayperiod", methods=["GET", "POST"])
+def edit_subject_dayperiod():
+    ensure_special_schedule()
+
+    y        = request.values.get("year",  type=int)
+    m        = request.values.get("month", type=int)
+    d        = request.values.get("day",   type=int)
+    period   = request.values.get("period", type=int)
+    gakka_id = request.values.get("gakka_id", type=int)
+
+    if not all([y, m, d, period, gakka_id]):
+        return "year, month, day, period, gakka_id は必須です。", 400
+
+    target_date = date(y, m, d).isoformat()
+
+    # ===== マスタ取得 =====
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 授業科目一覧
+        cur.execute("""
+            SELECT 授業科目ID, 授業科目名
+            FROM 授業科目
+            ORDER BY 授業科目ID
+        """)
+        subjects = cur.fetchall()
+
+        # 教室一覧
+        cur.execute("""
+            SELECT 教室ID, 教室名
+            FROM 教室
+            ORDER BY 教室ID
+        """)
+        rooms = cur.fetchall()
+
+        # 既存の特別時間割
+        cur.execute("""
+            SELECT 科目ID, 教室ID, 備考
+            FROM 特別時間割
+            WHERE 日付 = %s AND 学科ID = %s AND 時限 = %s
+        """, (target_date, gakka_id, period))
+        special = cur.fetchone()
+
+        # 授業計画から当日の「期×曜日」を取得
+        # （PostgreSQL なので DATE(...) 関数は使わず、そのまま比較）
+        cur.execute("""
+            SELECT 期, 授業曜日
+            FROM 授業計画
+            WHERE 日付 = %s
+            LIMIT 1
+        """, (target_date,))
+        jp = cur.fetchone()
+
+        default_row = None
+        if jp:
+            cur.execute("""
+                SELECT 科目ID, 教室ID, 備考
+                FROM 週時間割
+                WHERE 学科ID = %s AND 期 = %s AND 曜日 = %s AND 時限 = %s
+            """, (gakka_id, jp["期"], jp["授業曜日"], period))
+            default_row = cur.fetchone()
+
+    # ===== POST: 保存 or 削除 =====
+    if request.method == "POST":
+        action  = request.form.get("action", "save")
+        subj_id = request.form.get("科目ID", type=int)
+        room_id = request.form.get("教室ID", type=int)
+        note    = (request.form.get("備考") or "").strip()
+
+        with get_conn() as conn:
+            cur = conn.cursor()
+
+            if action == "delete":
+                # 特別時間割レコード削除 → 週時間割に戻す
+                cur.execute("""
+                    DELETE FROM 特別時間割
+                    WHERE 日付 = %s AND 学科ID = %s AND 時限 = %s
+                """, (target_date, gakka_id, period))
+                conn.commit()
+                flash("特別時間割を削除しました（週時間割に戻ります）。")
+
+            else:
+                # UPSERT (PostgreSQL の ON CONFLICT)
+                cur.execute("""
+                    INSERT INTO 特別時間割
+                      (日付, 学科ID, 時限, 科目ID, 教室ID, 備考)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (日付, 学科ID, 時限)
+                    DO UPDATE SET
+                      科目ID  = EXCLUDED.科目ID,
+                      教室ID  = EXCLUDED.教室ID,
+                      備考    = EXCLUDED.備考
+                """, (target_date, gakka_id, period, subj_id, room_id, note))
+                conn.commit()
+                flash("保存しました。")
+
+        # 編集前の月へ戻る
+        return redirect(url_for("tukijikanwari", year=y, month=m))
+
+    # ===== GET: 画面表示用 初期値（特別時間割 > 週時間割） =====
+    init_subj = special["科目ID"] if special else (default_row["科目ID"] if default_row else None)
+    init_room = special["教室ID"] if special else (default_row["教室ID"] if default_row else None)
+    init_note = special["備考"]   if special else (default_row["備考"]   if default_row else "")
+
+    return render_template_string("""
+<!doctype html><meta charset="utf-8">
+<title>日付×時限×学科の授業科目 編集</title>
+<style>
+ body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+ .card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;max-width:600px}
+ label{display:block;font-size:12px;color:#555;margin:8px 0 4px}
+ select,input,textarea,button{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+ button{background:#2f6feb;color:#fff;border:none;cursor:pointer;margin-top:10px}
+ button:hover{filter:brightness(.95)}
+ .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+ .danger{background:#f44336}
+ .small{font-size:12px;color:#666;margin-top:6px}
+ a.btn{display:inline-block;padding:8px 12px;background:#888;color:#fff;border-radius:8px;text-decoration:none;margin-top:10px}
+</style>
+<div class="card">
+  <h2 style="margin:0 0 10px">
+    授業科目の編集：{{ y }}年{{ m }}月{{ d }}日／{{ period }}限／学科ID {{ gakka_id }}
+  </h2>
+
+  <form method="post">
+    <div>
+      <label>科目</label>
+      <select name="科目ID" required>
+        <option value="">-- 選択 --</option>
+        {% for s in subjects %}
+          <option value="{{ s['授業科目ID'] }}"
+            {% if init_subj and s['授業科目ID'] == init_subj %}selected{% endif %}>
+            {{ s['授業科目ID'] }} : {{ s['授業科目名'] }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>教室</label>
+        <select name="教室ID">
+          <option value="">-- 未設定 --</option>
+          {% for r in rooms %}
+            <option value="{{ r['教室ID'] }}"
+              {% if init_room and r['教室ID'] == init_room %}selected{% endif %}>
+              {{ r['教室ID'] }} : {{ r['教室名'] }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>備考</label>
+        <input name="備考" value="{{ init_note or '' }}">
+      </div>
+    </div>
+
+    <button type="submit" name="action" value="save">保存</button>
+  </form>
+
+  {% if init_subj is not none or init_room is not none or init_note %}
+  <form method="post"
+        onsubmit="return confirm('特別時間割を削除して週時間割に戻します。よろしいですか？');">
+    <button class="danger" type="submit" name="action" value="delete">
+      特別時間割を削除
+    </button>
+  </form>
+  {% endif %}
+
+  <a class="btn" href="{{ url_for('tukijikanwari', year=y, month=m) }}">← 月表示に戻る</a>
+  <div class="small">
+    ※ この変更は <b>{{ y }}-{{ '%02d'|format(m) }}-{{ '%02d'|format(d) }}</b> の該当コマだけに適用されます。
+  </div>
+</div>
+""",
+        y=y, m=m, d=d,
+        period=period,
+        gakka_id=gakka_id,
+        subjects=subjects,
+        rooms=rooms,
+        init_subj=init_subj,
+        init_room=init_room,
+        init_note=init_note,
+    )
 
 @app.route("/timetable")
 def timetable():
@@ -3159,3 +3343,4 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
