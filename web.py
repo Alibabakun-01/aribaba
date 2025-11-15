@@ -729,15 +729,15 @@ def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT 入室区分
-            FROM 入退室
-            WHERE 学生番号 = %s AND 学科ID = %s
-            ORDER BY 入退出時間 DESC, 記録ID DESC
+            SELECT "入室区分"
+            FROM "入退室"
+            WHERE "学生番号" = %s AND "学科ID" = %s
+            ORDER BY "入退出時間" DESC, "記録ID" DESC
             LIMIT 1
         """, (学生番号, 学科ID))
         row = cur.fetchone()
-        # RealDictCursor を使っているので、row["入室区分"] で取り出す
         return row["入室区分"] if row else None
+
 
 def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """期間内の各日の最初の入室ログを取得します（ORM/PostgreSQL版）。"""
@@ -3344,6 +3344,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
