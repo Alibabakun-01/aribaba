@@ -13,6 +13,7 @@ from sqlalchemy.orm import aliased
 from functools import wraps
 from io import BytesIO, StringIO
 from collections import defaultdict
+from psycopg2.extras import RealDictCursor
 # from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
 # =========================================================================
@@ -1746,6 +1747,38 @@ def kamoku_csv():
         }
     )
 
+@app.route("/kiki")
+def kiki():
+    """期マスタテーブルの一覧を表示"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 期ID, 期名
+            FROM 期マスタ
+            ORDER BY 期ID
+        """)
+        rows = cur.fetchall()
+
+    return render_template("kiki.html", rows=rows)
+
+
+# ==============================
+#  教室一覧
+# ==============================
+@app.route("/classrooms")
+def classrooms():
+    """教室テーブルの一覧を表示"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 教室ID, 教室名, 収容人数
+            FROM 教室
+            ORDER BY 教室ID
+        """)
+        rows = cur.fetchall()
+
+    return render_template("classrooms.html", rows=rows)
+
 @app.route("/logs")
 @require_logs_auth
 def logs():
@@ -2087,6 +2120,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
