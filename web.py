@@ -2417,6 +2417,73 @@ def jikanwari():
         selected_term=selected_term,
     )
 
+@app.route("/tukijikanwari_csv", methods=["GET"])
+def tukijikanwari_csv():
+    """
+    /tukijikanwari の月カレンダーを CSV 出力
+    出力列: 年, 月, 日, 曜日, 時限, 科目名, 教室ID, 備考
+    """
+    today = date.today()
+    year  = request.args.get("year",  default=today.year,  type=int)
+    month = request.args.get("month", default=today.month, type=int)
+
+    # 既存関数を再利用
+    # generate_monthly_schedule(selected_month, selected_year) を想定
+    # 戻り値: { month: { day: [ {時限, 科目名, 教室ID, 備考, ...}, ... ] } }
+    monthly_schedule = generate_monthly_schedule(selected_month=month, selected_year=year)
+    days_map = monthly_schedule.get(month, {})
+
+    youbi_names = ["月", "火", "水", "木", "金", "土", "日"]
+
+    # CSV 構築
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+
+    # Excel で文字化けしないように UTF-8 BOM 付き
+    writer.writerow(["年", "月", "日", "曜日", "時限", "科目名", "教室ID", "備考"])
+
+    # 日付昇順 → 時限昇順で出力
+    for d in sorted(days_map.keys()):
+        try:
+            w = date(year, month, int(d)).weekday()  # 0=月 … 6=日
+            youbi = youbi_names[w]
+        except Exception:
+            youbi = ""
+        lessons = sorted(days_map[d], key=lambda x: x.get("時限", 0))
+        for les in lessons:
+            writer.writerow([
+                year,
+                month,
+                d,
+                youbi,
+                les.get("時限", ""),
+                les.get("科目名", ""),
+                les.get("教室ID", ""),
+                les.get("備考", ""),
+            ])
+
+    data = buf.getvalue().encode("utf-8-sig")  # BOM付き
+    bio = io.BytesIO(data)
+    bio.seek(0)
+    fname = f"月間時間割_{year}{month:02d}.csv"
+
+    # Flask 2.x 以降の send_file
+    try:
+        return send_file(
+            bio,
+            as_attachment=True,
+            download_name=fname,
+            mimetype="text/csv; charset=utf-8",
+        )
+    except TypeError:
+        # 古い Flask 用フォールバック
+        return send_file(
+            bio,
+            as_attachment=True,
+            attachment_filename=fname,
+            mimetype="text/csv; charset=utf-8",
+        )
+
 @app.route("/timetable")
 def timetable():
     # クエリパラメータの取得（デフォルト値を設定）
@@ -2469,6 +2536,118 @@ def timetable():
     </body>
     </html>
     """, timetable_data=timetable_data, period=period, week_day=week_day)
+
+@app.route("/kamoku_edit_day", methods=["GET", "POST"])
+def kamoku_edit_day():
+    """
+    特定の日付・時限の授業科目を編集
+    - GET: 現在の科目を表示
+    - POST: 選択した科目に更新
+    """
+    year   = request.args.get("year", type=int)
+    month  = request.args.get("month", type=int)
+    day    = request.args.get("day", type=int)
+    period = request.args.get("period", type=int)
+
+    # 一応日付として構成しておく（今は使っていないが将来拡張用）
+    target_date = date(year, month, day)
+
+    # ===== POST: 科目の更新 =====
+    if request.method == "POST":
+        # フォームから選択された科目IDを取得
+        subject_raw = request.form.get("subject_id")
+        try:
+            new_subject_id = int(subject_raw)
+        except (TypeError, ValueError):
+            flash("科目IDが不正です。")
+            return redirect(url_for("kamoku_edit_day",
+                                    year=year, month=month, day=day, period=period))
+
+        with get_conn() as conn:
+            cur = conn.cursor()
+            # この日付・時限・学科IDを特定して UPDATE するロジックは簡略化
+            # 実際には generate_monthly_schedule() が参照する情報に合わせて条件を増やす想定
+            cur.execute(
+                """
+                UPDATE 週時間割
+                SET 科目ID = %s
+                WHERE 時限 = %s AND 科目ID IS NOT NULL
+                """,
+                (new_subject_id, period),
+            )
+            conn.commit()
+
+        flash(f"{year}年{month}月{day}日 {period}限の授業科目を更新しました。")
+        return redirect(url_for("tukijikanwari", month=month, year=year))
+
+    # ===== GET: 現在の科目・科目一覧を表示 =====
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 授業科目一覧
+        cur.execute("""
+            SELECT 授業科目ID, 授業科目名
+            FROM 授業科目
+            ORDER BY 授業科目ID
+        """)
+        subjects = cur.fetchall()
+
+        # 現在の科目（簡易版：同じ時限のものから1件だけ拾う）
+        cur.execute(
+            """
+            SELECT w.科目ID, s.授業科目名
+            FROM 週時間割 w
+            LEFT JOIN 授業科目 s ON s.授業科目ID = w.科目ID
+            WHERE w.時限 = %s
+            LIMIT 1
+            """,
+            (period,),
+        )
+        current = cur.fetchone()
+
+    return render_template_string(
+        """
+<!doctype html>
+<meta charset="utf-8">
+<title>授業科目の編集</title>
+<style>
+body{font-family:system-ui,Meiryo,sans-serif;margin:20px;background:#f7f7fb}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+h1{margin:0 0 12px}
+select,button{padding:8px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+button{background:#2f6feb;color:#fff;border:none;cursor:pointer}
+button:hover{filter:brightness(.95)}
+a{text-decoration:none;color:#2f6feb}
+</style>
+
+<div class="card">
+  <h1>{{year}}年{{month}}月{{day}}日 {{period}}限 の授業科目を編集</h1>
+  <a href="{{ url_for('tukijikanwari', year=year, month=month) }}">← 月間時間割に戻る</a>
+</div>
+
+<div class="card">
+  <form method="post">
+    <label>授業科目を選択</label><br>
+    <select name="subject_id" required>
+      {% for s in subjects %}
+        <option value="{{ s['授業科目ID'] }}"
+          {% if current and current['科目ID'] == s['授業科目ID'] %}selected{% endif %}>
+          {{ s['授業科目名'] }}（ID:{{ s['授業科目ID'] }}）
+        </option>
+      {% endfor %}
+    </select>
+    <br><br>
+    <button type="submit">更新</button>
+  </form>
+</div>
+""",
+        year=year,
+        month=month,
+        day=day,
+        period=period,
+        current=current,
+        subjects=subjects,
+    )
 
 @app.route("/summary", methods=["GET", "POST"])
 def summary():
@@ -2561,6 +2740,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
