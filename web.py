@@ -4,14 +4,14 @@ import psycopg2
 import os
 from typing import Optional, Any # <<< これを追加
 from datetime import datetime, date, timedelta, time
-from flask import Flask, render_template, render_template_string, request, url_for, jsonify, redirect, flash, session, abort, send_file
+from flask import Flask, render_template, render_template_string, request, url_for, jsonify, redirect, flash, session, abort, send_fil, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.exc import IntegrityError  # ここでインポート
 from sqlalchemy.orm import aliased
 from functools import wraps
-from io import BytesIO
+from io import BytesIO, StringIO
 from collections import defaultdict
 # from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
@@ -1715,6 +1715,37 @@ def api_reset():
         # もし何かトラブルが起きたら 500 を返す
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/kamoku_csv")
+def kamoku_csv():
+    """現在の科目・期の出席情報をCSVで出力"""
+    subject_id = request.args.get("subject_id", type=int)
+    term = request.args.get("term", type=int, default=0)
+
+    if not subject_id:
+        return "科目が選択されていません。", 400
+
+    # --- CSV 作成 ---
+    output = StringIO()
+
+    # Excel対応：UTF-8 BOMを付ける
+    output.write("\ufeff")
+
+    writer = csv.writer(output)
+    writer.writerow(["学生番号", "生徒名", "出席", "遅刻", "欠席", "未記入", "総回数", "出席率(%)"])
+    writer.writerow(["---", "このCSV出力は動作確認用です。", "", "", "", "", "", ""])
+
+    csv_data = output.getvalue()
+    output.close()
+
+    # --- Response で返す ---
+    return Response(
+        csv_data,
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=attendance_{subject_id}_{term}.csv"
+        }
+    )
+
 @app.route("/logs")
 @require_logs_auth
 def logs():
@@ -2056,4 +2087,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
