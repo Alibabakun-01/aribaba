@@ -3318,9 +3318,14 @@ a{text-decoration:none;color:#2f6feb}
 
 @app.route("/summary")
 def summary():
-    from .web_summary_functions import default_month_range, get_official_student, \
-                                       fetch_attendance_totals, fetch_daily_first_checkin, \
-                                       fetch_attendance_details, fetch_subject_attendance_rates
+    from web_summary_functions import (
+    default_month_range,
+    get_official_student,
+    fetch_attendance_totals,
+    fetch_daily_first_checkin,
+    fetch_attendance_details,
+    fetch_subject_attendance_rates,
+)
 
     # デフォルト期間：今月1日〜今日
     start_default, end_default = default_month_range()
@@ -3399,6 +3404,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
