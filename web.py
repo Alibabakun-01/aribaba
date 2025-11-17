@@ -3318,20 +3318,20 @@ a{text-decoration:none;color:#2f6feb}
 
 @app.route("/summary")
 def summary():
-    # デフォルト期間：今月1日〜今日
+    # ここで必要な関数を定義する（web_summary_functions.py ではなく、直接このファイル内で）
     from datetime import date
 
+    # デフォルトの期間（今月1日〜今日）
     def default_month_range():
-        """今月の開始日と終了日を返す"""
         start = date(date.today().year, date.today().month, 1)
         end = date.today()
         return start, end
 
-    # フォーム値を取得
+    # フォームから取得
     student_no = request.values.get("student_no")
     gakka_id_str = request.values.get("gakka_id")
-    start_date = request.values.get("start", start_default)
-    end_date = request.values.get("end", end_default)
+    start_date = request.values.get("start") or start_default
+    end_date = request.values.get("end") or end_default
 
     totals = None
     daily = []
@@ -3345,25 +3345,25 @@ def summary():
             学生番号 = int(student_no)
             学科ID = int(gakka_id_str)
 
-            # 1. 生徒名と学科名を取得
+            # 1. 生徒名を取得
             selected_student_name = get_official_student(学生番号, 学科ID)
-            
-            # 学科名を取得 (ORMを使用)
-            gakka = 学科.query.filter(学科.学科ID == 学科ID).first()
-            selected_gakka_name = gakka.学科名 if gakka else f"ID:{学科ID}"
 
-            # 2. 各種集計データを取得
+            # 2. 学科名を取得
+            selected_gakka_name = next(
+                (g["学科名"] for g in gakkas if g["学科ID"] == 学科ID),
+                f"ID:{学科ID}"
+            )
+
+            # 3. 集計データを取得
             totals = fetch_attendance_totals(学生番号, 学科ID, start_date, end_date)
             daily = fetch_daily_first_checkin(学生番号, 学科ID, start_date, end_date)
             attendance_details = fetch_attendance_details(学生番号, 学科ID, start_date, end_date)
             subject_rates = fetch_subject_attendance_rates(学生番号, 学科ID, start_date, end_date)
 
         except Exception as e:
-            # flash を使用するには app.secret_key の設定とテンプレートでの表示が必要です
-            print(f"サマリー取得エラー: {e}") 
-            # flash(f"サマリー取得エラー: {e}") # 本番環境では flash を使用
+            print(f"サマリー取得エラー: {e}")  # ログ出力に切り替え（本番では flash 使う）
 
-    # 3. テンプレートをレンダリング
+    # テンプレートをレンダリング
     return render_template(
         "summary.html",
         students=students,
@@ -3378,8 +3378,7 @@ def summary():
         end_date=end_date,
         start_default=start_default,
         end_default=end_default,
-        # DB_PATH ではなく DATABASE_URL を使用（Render環境向け）
-        db_path=DATABASE_URL, 
+        db_path=DATABASE_URL,  # Render環境向け
     )
 
 @app.route("/healthz")
@@ -3401,4 +3400,5 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
