@@ -859,35 +859,26 @@ def get_exit_attendance_status(退出時刻: str) -> str:
 
 def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int,
                             入退出時間: Optional[str] = None):
-    # タイムスタンプの正規化（省略時は現在時刻）
+    # タイムスタンプの決定（省略時は現在時刻）
     ts = normalize_ts(入退出時間) if 入退出時間 else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 直前の入室区分から、次が「入室」か「退出」かを決定
+    # 直前の入室区分から次の状態を決める
     last = get_last_status(学生番号, 学科ID)
     next_status = "退出" if last == "入室" else "入室"
 
     with get_conn() as conn:
         cur = conn.cursor()
 
-        # --- 出席状態カラムの存在チェック（PostgreSQL版） ---
-        # ※ もうテーブル定義が固定なら、このブロックごと削除してもOK
-        cur.execute("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = '入退室'
-        """)
-        cols = [r["column_name"] for r in cur.fetchall()]
-        if "出席状態" not in cols:
-            # 既存DBに合わせるため、自動で ALTER TABLE は行わない
-            pass
+        # 🔽 ここにあった PRAGMA / information_schema によるカラムチェックは削除しました
+        # 「出席状態」カラムは事前に DB で作成しておく前提で動かします
 
-        # --- 出席状態の判定 ---
+        # 出席状態の判定
         if next_status == "入室":
             att = get_attendance_status(ts)
         else:
             att = get_exit_attendance_status(ts)
 
-        # --- 入退室レコードの INSERT（PostgreSQL / psycopg2 用） ---
+        # PostgreSQL 用 INSERT（%s ＋ ダブルクォート）
         cur.execute("""
             INSERT INTO "入退室"
               ("学生番号", "生徒名", "学科ID", "入退出時間", "入室区分", "出席状態")
@@ -895,7 +886,6 @@ def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int,
         """, (学生番号, 生徒名, 学科ID, ts, next_status, att))
 
         conn.commit()
-
 
 def ensure_absent_reason_table():
     with get_conn() as conn:
@@ -3384,6 +3374,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
