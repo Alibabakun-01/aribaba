@@ -3318,31 +3318,20 @@ a{text-decoration:none;color:#2f6feb}
 
 @app.route("/summary")
 def summary():
-    # ★ 相対インポート（.付き）はNGなので絶対インポートに変更
-    from web_summary_functions import (
-        default_month_range,
-        get_official_student,
-        fetch_attendance_totals,
-        fetch_daily_first_checkin,
-        fetch_attendance_details,
-        fetch_subject_attendance_rates,
-        # もし web_summary_functions 内に無ければ、こっちで定義済みのものを使う
-        # fetch_students, fetch_gakkas が別ファイルなら、上の import から除外してOK
-    )
-
-    # ▼ 個人別サマリー画面のプルダウン用マスタ
-    #   すでに他の画面で使っている fetch_students / fetch_gakkas がある前提
-    students = fetch_students()   # 生徒一覧（学科ID, 学生番号, 生徒名, 学科名）
-    gakkas   = fetch_gakkas()     # 学科一覧（学科ID, 学科名）
-
     # デフォルト期間：今月1日〜今日
-    start_default, end_default = default_month_range()
+    from datetime import date
 
-    # フォーム値を取得（値が無ければデフォルトを使う）
-    student_no  = request.values.get("student_no")
+    def default_month_range():
+        """今月の開始日と終了日を返す"""
+        start = date(date.today().year, date.today().month, 1)
+        end = date.today()
+        return start, end
+
+    # フォーム値を取得
+    student_no = request.values.get("student_no")
     gakka_id_str = request.values.get("gakka_id")
-    start_date  = request.values.get("start") or start_default
-    end_date    = request.values.get("end") or end_default
+    start_date = request.values.get("start", start_default)
+    end_date = request.values.get("end", end_default)
 
     totals = None
     daily = []
@@ -3354,28 +3343,27 @@ def summary():
     if student_no and gakka_id_str:
         try:
             学生番号 = int(student_no)
-            学科ID   = int(gakka_id_str)
+            学科ID = int(gakka_id_str)
 
-            # 1. 生徒名を取得
+            # 1. 生徒名と学科名を取得
             selected_student_name = get_official_student(学生番号, 学科ID)
+            
+            # 学科名を取得 (ORMを使用)
+            gakka = 学科.query.filter(学科.学科ID == 学科ID).first()
+            selected_gakka_name = gakka.学科名 if gakka else f"ID:{学科ID}"
 
-            # 2. 学科名を「gakkas」リストから探す（ORM を使わずに完結させる）
-            selected_gakka_name = next(
-                (g["学科名"] for g in gakkas if g["学科ID"] == 学科ID),
-                f"ID:{学科ID}"
-            )
-
-            # 3. 各種集計データを取得
+            # 2. 各種集計データを取得
             totals = fetch_attendance_totals(学生番号, 学科ID, start_date, end_date)
             daily = fetch_daily_first_checkin(学生番号, 学科ID, start_date, end_date)
             attendance_details = fetch_attendance_details(学生番号, 学科ID, start_date, end_date)
             subject_rates = fetch_subject_attendance_rates(学生番号, 学科ID, start_date, end_date)
 
         except Exception as e:
-            # Render のログに出すだけ（必要なら flash に変更）
-            app.logger.error(f"サマリー取得エラー: {e}")
+            # flash を使用するには app.secret_key の設定とテンプレートでの表示が必要です
+            print(f"サマリー取得エラー: {e}") 
+            # flash(f"サマリー取得エラー: {e}") # 本番環境では flash を使用
 
-    # 4. テンプレートをレンダリング（summary.html を呼び出している）
+    # 3. テンプレートをレンダリング
     return render_template(
         "summary.html",
         students=students,
@@ -3390,7 +3378,8 @@ def summary():
         end_date=end_date,
         start_default=start_default,
         end_default=end_default,
-        db_path=DATABASE_URL,  # Render環境向け
+        # DB_PATH ではなく DATABASE_URL を使用（Render環境向け）
+        db_path=DATABASE_URL, 
     )
 
 @app.route("/healthz")
@@ -3412,3 +3401,4 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
