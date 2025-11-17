@@ -15,14 +15,6 @@ from functools import wraps
 from io import BytesIO, StringIO
 from collections import defaultdict
 from psycopg2.extras import RealDictCursor
-from web_summary_functions import (
-    default_month_range,
-    get_official_student,
-    fetch_attendance_totals,
-    fetch_daily_first_checkin,
-    fetch_attendance_details,
-    fetch_subject_attendance_rates,
-)
 
 # from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
@@ -3326,8 +3318,9 @@ a{text-decoration:none;color:#2f6feb}
 
 @app.route("/summary")
 def summary():
-    students = fetch_students()
-    gakkas = fetch_gakkas()
+    from .web_summary_functions import default_month_range, get_official_student, \
+                                       fetch_attendance_totals, fetch_daily_first_checkin, \
+                                       fetch_attendance_details, fetch_subject_attendance_rates
 
     # デフォルト期間：今月1日〜今日
     start_default, end_default = default_month_range()
