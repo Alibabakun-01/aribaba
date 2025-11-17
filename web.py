@@ -3336,6 +3336,10 @@ def summary():
     start_date = request.values.get("start") or start_default
     end_date = request.values.get("end") or end_default
 
+    # ここで students と gakkas を定義
+    students = fetch_students()  # 生徒のリスト
+    gakkas = fetch_gakkas()  # 学科のリスト
+
     totals = None
     daily = []
     subject_rates = []
@@ -3403,6 +3407,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
