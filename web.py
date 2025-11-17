@@ -830,32 +830,72 @@ def get_exit_attendance_status(退出時刻: str) -> str:
         return "退出"
 
 # ====== Insert entry (existing logic kept) ======
-def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int, 入退出時間: Optional[str] = None):
+# def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int, 入退出時間: Optional[str] = None):
+#     ts = normalize_ts(入退出時間) if 入退出時間 else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#     last = get_last_status(学生番号, 学科ID)
+#     next_status = "退出" if last == "入室" else "入室"
+
+#     with get_conn() as conn:
+#         cur = conn.cursor()
+
+#         # Ensure column 出席状態 exists (do not auto-alter by default)
+#         cur.execute("PRAGMA table_info(入退室);")
+#         cols = [r[1] for r in cur.fetchall()]
+#         if "出席状態" not in cols:
+#             # 既存DBに合わせるため、ここでは自動追加しない
+#             pass
+
+#         # Decide attendance status
+#         if next_status == "入室":
+#             att = get_attendance_status(ts)
+#         else:
+#             att = get_exit_attendance_status(ts)
+
+#         cur.execute("""
+#             INSERT INTO 入退室 (学生番号, 生徒名, 学科ID, 入退出時間, 入室区分, 出席状態)
+#             VALUES (?,?,?,?,?,?)
+#         """, (学生番号, 生徒名, 学科ID, ts, next_status, att))
+#         conn.commit()
+
+def insert_attendance_input(学生番号: int, 生徒名: str, 学科ID: int,
+                            入退出時間: Optional[str] = None):
+    # タイムスタンプの正規化（省略時は現在時刻）
     ts = normalize_ts(入退出時間) if 入退出時間 else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 直前の入室区分から、次が「入室」か「退出」かを決定
     last = get_last_status(学生番号, 学科ID)
     next_status = "退出" if last == "入室" else "入室"
 
     with get_conn() as conn:
         cur = conn.cursor()
 
-        # Ensure column 出席状態 exists (do not auto-alter by default)
-        cur.execute("PRAGMA table_info(入退室);")
-        cols = [r[1] for r in cur.fetchall()]
+        # --- 出席状態カラムの存在チェック（PostgreSQL版） ---
+        # ※ もうテーブル定義が固定なら、このブロックごと削除してもOK
+        cur.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '入退室'
+        """)
+        cols = [r["column_name"] for r in cur.fetchall()]
         if "出席状態" not in cols:
-            # 既存DBに合わせるため、ここでは自動追加しない
+            # 既存DBに合わせるため、自動で ALTER TABLE は行わない
             pass
 
-        # Decide attendance status
+        # --- 出席状態の判定 ---
         if next_status == "入室":
             att = get_attendance_status(ts)
         else:
             att = get_exit_attendance_status(ts)
 
+        # --- 入退室レコードの INSERT（PostgreSQL / psycopg2 用） ---
         cur.execute("""
-            INSERT INTO 入退室 (学生番号, 生徒名, 学科ID, 入退出時間, 入室区分, 出席状態)
-            VALUES (?,?,?,?,?,?)
+            INSERT INTO "入退室"
+              ("学生番号", "生徒名", "学科ID", "入退出時間", "入室区分", "出席状態")
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (学生番号, 生徒名, 学科ID, ts, next_status, att))
+
         conn.commit()
+
 
 def ensure_absent_reason_table():
     with get_conn() as conn:
@@ -3344,6 +3384,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
