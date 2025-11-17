@@ -753,18 +753,7 @@ def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
             LIMIT 1
         """, (学生番号, 学科ID))
         row = cur.fetchone()
-        if not row:
-            return None
-
-        # カーソルの種類に応じて両対応（dict でも tuple でもOK）
-        try:
-            # DictCursor / RealDictCursor の場合
-            return row["入室区分"]
-        except (TypeError, KeyError):
-            # 普通のカーソルで tuple の場合
-            return row[0]
-
-
+        return row["入室区分"] if row else None
 
 def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """期間内の各日の最初の入室ログを取得します（ORM/PostgreSQL版）。"""
@@ -1160,13 +1149,29 @@ def fetch_subject_attendance_rates(学生番号: int, 学科ID: int, start_date:
         {"授業科目": "科目B", "出席": 10, "遅刻": 0, "欠席": 1, "出席率(%)": "90.9"},
     ]
 
+# def get_conn():
+#     try:
+#         conn = psycopg2.connect(DATABASE_URL)
+#         return conn
+#     except Exception as e:
+#         app.logger.error(f"Database connection error: {e}")
+#         raise  # 再度エラーを投げて、エラーハンドリングを上位に任せる
 def get_conn():
+    """
+    PostgreSQL への接続。
+    fetchone()/fetchall() の戻り値が dict になるので、
+    row["入室区分"], row["学科ID"] などがそのまま使える。
+    """
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(
+            DATABASE_URL,
+            cursor_factory=RealDictCursor  # ← ★これが重要！
+        )
         return conn
     except Exception as e:
         app.logger.error(f"Database connection error: {e}")
-        raise  # 再度エラーを投げて、エラーハンドリングを上位に任せる
+        raise
+
 
 def require_logs_auth(view_func):
     """ /logs 用の簡易パスワード認証 """
@@ -3401,6 +3406,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
