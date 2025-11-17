@@ -3318,16 +3318,19 @@ a{text-decoration:none;color:#2f6feb}
 
 @app.route("/summary")
 def summary():
-    # ここで必要な関数を定義する（web_summary_functions.py ではなく、直接このファイル内で）
+    # デフォルト期間：今月1日〜今日
     from datetime import date
 
-    # デフォルトの期間（今月1日〜今日）
+    # default_month_range を定義（これを使って日付のデフォルトを返す）
     def default_month_range():
         start = date(date.today().year, date.today().month, 1)
         end = date.today()
         return start, end
 
-    # フォームから取得
+    # デフォルト期間（今月1日〜今日）を設定
+    start_default, end_default = default_month_range()
+
+    # フォーム値を取得（デフォルトは start_default と end_default）
     student_no = request.values.get("student_no")
     gakka_id_str = request.values.get("gakka_id")
     start_date = request.values.get("start") or start_default
@@ -3363,7 +3366,7 @@ def summary():
         except Exception as e:
             print(f"サマリー取得エラー: {e}")  # ログ出力に切り替え（本番では flash 使う）
 
-    # テンプレートをレンダリング
+    # 4. テンプレートをレンダリング（summary.html を呼び出している）
     return render_template(
         "summary.html",
         students=students,
@@ -3400,5 +3403,6 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
