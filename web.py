@@ -3321,8 +3321,8 @@ def summary():
     # デフォルト期間：今月1日〜今日
     from datetime import date
 
-    # default_month_range を定義（これを使って日付のデフォルトを返す）
     def default_month_range():
+        """今月の開始日と終了日を返す"""
         start = date(date.today().year, date.today().month, 1)
         end = date.today()
         return start, end
@@ -3351,13 +3351,13 @@ def summary():
             # 1. 生徒名を取得
             selected_student_name = get_official_student(学生番号, 学科ID)
 
-            # 2. 学科名を取得
+            # 2. 学科名を「gakkas」リストから探す
             selected_gakka_name = next(
                 (g["学科名"] for g in gakkas if g["学科ID"] == 学科ID),
                 f"ID:{学科ID}"
             )
 
-            # 3. 集計データを取得
+            # 3. 各種集計データを取得
             totals = fetch_attendance_totals(学生番号, 学科ID, start_date, end_date)
             daily = fetch_daily_first_checkin(学生番号, 学科ID, start_date, end_date)
             attendance_details = fetch_attendance_details(学生番号, 学科ID, start_date, end_date)
@@ -3366,7 +3366,7 @@ def summary():
         except Exception as e:
             print(f"サマリー取得エラー: {e}")  # ログ出力に切り替え（本番では flash 使う）
 
-    # 4. テンプレートをレンダリング（summary.html を呼び出している）
+    # 4. テンプレートをレンダリング
     return render_template(
         "summary.html",
         students=students,
@@ -3403,6 +3403,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
