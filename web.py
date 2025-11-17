@@ -725,7 +725,24 @@ def get_exit_attendance_status(退出時刻: str) -> str:
         return "退出"
 
 # ====== Last status ======
+# def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
+#     with get_conn() as conn:
+#         cur = conn.cursor()
+#         cur.execute("""
+#             SELECT "入室区分"
+#             FROM "入退室"
+#             WHERE "学生番号" = %s AND "学科ID" = %s
+#             ORDER BY "入退出時間" DESC, "記録ID" DESC
+#             LIMIT 1
+#         """, (学生番号, 学科ID))
+#         row = cur.fetchone()
+#         return row["入室区分"] if row else None
+
 def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
+    """
+    指定された学生の直近の「入室区分」を返す。
+    レコードが無ければ None を返す。
+    """
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -736,7 +753,17 @@ def get_last_status(学生番号: int, 学科ID: int) -> Optional[str]:
             LIMIT 1
         """, (学生番号, 学科ID))
         row = cur.fetchone()
-        return row["入室区分"] if row else None
+        if not row:
+            return None
+
+        # カーソルの種類に応じて両対応（dict でも tuple でもOK）
+        try:
+            # DictCursor / RealDictCursor の場合
+            return row["入室区分"]
+        except (TypeError, KeyError):
+            # 普通のカーソルで tuple の場合
+            return row[0]
+
 
 
 def fetch_daily_first_checkin(学生番号: int, 学科ID: int, start_date: str, end_date: str):
@@ -3374,6 +3401,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
