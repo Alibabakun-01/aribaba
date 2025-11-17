@@ -15,6 +15,15 @@ from functools import wraps
 from io import BytesIO, StringIO
 from collections import defaultdict
 from psycopg2.extras import RealDictCursor
+from web_summary_functions import (
+    default_month_range,
+    get_official_student,
+    fetch_attendance_totals,
+    fetch_daily_first_checkin,
+    fetch_attendance_details,
+    fetch_subject_attendance_rates,
+)
+
 # from .web import db, TimeTable, 学科, 授業科目, session # 仮に web.py から import されていると仮定
 
 # =========================================================================
@@ -3315,17 +3324,8 @@ a{text-decoration:none;color:#2f6feb}
         subjects=subjects,
     )
 
-@app.route("/summary", methods=["GET", "POST"])
+@app.route("/summary")
 def summary():
-    """
-    出欠サマリーページを表示・処理します。
-    生徒と期間を指定し、合計出欠数、日次チェックイン、詳細ログなどを表示します。
-    """
-    # 必須のヘルパー関数（このファイル内で定義されている必要があります）
-    from .web_summary_functions import default_month_range, get_official_student, \
-                                       fetch_attendance_totals, fetch_daily_first_checkin, \
-                                       fetch_attendance_details, fetch_subject_attendance_rates
-
     students = fetch_students()
     gakkas = fetch_gakkas()
 
@@ -3406,6 +3406,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
