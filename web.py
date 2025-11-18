@@ -1126,26 +1126,23 @@ def fetch_daily_inout(学生番号: int, 学科ID: int, start_date: str, end_dat
         return cur.fetchall()
 
 def fetch_attendance_details(学生番号: int, 学科ID: int, start_date: str, end_date: str):
-    """期間内のすべての入退室ログの詳細を取得します（簡素化ORM版）。"""
-    # 複雑なPythonロジックはテンプレート/フロントエンド側での処理を推奨するため、
-    # ここではデータベースから必要なログをシンプルに取得します。
+    """指定された学生の入退室ログを取得"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT 入退出時間, 入室区分, 時限, 出席状態, 入室時刻, 離席時間
+                FROM 入退室
+                WHERE 学生番号 = %s AND 学科ID = %s
+                AND 入退出時間 BETWEEN %s AND %s
+                ORDER BY 入退出時間 ASC
+            """, (学生番号, 学科ID, start_date, end_date))
 
-    results = 入退室.query.filter(
-        入退室.学生番号 == 学生番号,
-        入退室.学科ID == 学科ID,
-        func.cast(入退室.入退出時間, Date) >= start_date,
-        func.cast(入退室.入退出時間, Date) <= end_date
-    ).order_by(入退室.入退出時間.asc()).all()
-
-    # 必要な情報を含む辞書リストとして返す（詳細な計算ロジックは削除）
-    details = [
-        {"入退出時間": r.入退出時間, "入室区分": r.入室区分, "出席状態": r.出席状態}
-        for r in results
-    ]
-    
-    # **注意**: 元の複雑なロジック（resolve_period_for, timedelta計算など）は
-    # この簡素化されたORM版には含まれていません。必要に応じて再実装が必要です。
-    return details
+            rows = cur.fetchall()  # ここでタプルが返されます
+            return rows
+    except Exception as e:
+        app.logger.error(f"Error fetching attendance details: {e}")
+        return []
 
 def fetch_subject_attendance_rates(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """科目ごとの出席率を集計する処理（スタブ・未実装）"""
@@ -3414,6 +3411,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
