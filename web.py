@@ -1164,12 +1164,12 @@ def get_conn():
     """
     PostgreSQL への接続。
     fetchone()/fetchall() の戻り値が dict になるので、
-    row["入室区分"], row["学科ID"] などがそのまま使える。
+    row["カラム名"] でアクセスできる。
     """
     try:
         conn = psycopg2.connect(
             DATABASE_URL,
-            cursor_factory=RealDictCursor  # ← これが重要！
+            cursor_factory=RealDictCursor  # ← これで結果を辞書形式にする
         )
         return conn
     except Exception as e:
@@ -3409,6 +3409,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
