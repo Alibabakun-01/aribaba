@@ -609,32 +609,37 @@ def get_official_student(学生番号: int, 学科ID: int) -> Optional[str]:
 # サマリー集計関数（ORM利用）
 # =========================================================================
 
+from sqlalchemy import text
+
 def fetch_attendance_totals(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """指定期間の出欠合計回数を集計します（ORM版）。"""
-    # start_date と end_date を datetime 型に変換
-    start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-    end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+    try:
+        # SQLを直接実行する場合（textを使用してRAW SQLを渡す）
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT 
+                    入退室.出席状態, 
+                    COUNT(入退室.出席状態) AS cnt
+                FROM 入退室
+                WHERE 入退室.学生番号 = %s
+                  AND 入退室.学科ID = %s
+                  AND 入退室.入室区分 = '入室'
+                  AND DATE(入退室.入退出時間) BETWEEN %s AND %s
+                  AND 入退室.出席状態 IN ('出席', '遅刻', '欠席')
+                GROUP BY 入退室.出席状態
+            """, (学生番号, 学科ID, start_date, end_date))
 
-    # 出席状態ごとのカウントをDBで集計
-    counts = db.session.query(
-        入退室.出席状態,
-        func.count(入退室.出席状態).label('cnt')
-    ).filter(
-        入退室.学生番号 == 学生番号,
-        入退室.学科ID == 学科ID,
-        # PostgreSQLのDATE型キャストと期間指定
-        func.cast(入退室.入退出時間, Date) >= start_date,
-        func.cast(入退室.入退出時間, Date) <= end_date,
-        入退室.出席状態.in_(['出席', '遅刻', '欠席'])
-    ).group_by(入退室.出席状態).all()
+            counts = cur.fetchall()  # タプルのリストが返ってきます
+            totals = {"出席": 0, "遅刻": 0, "欠席": 0}
+            for status, count in counts:
+                totals[status] = count
 
-    totals = {"出席": 0, "遅刻": 0, "欠席": 0}
-    for status, count in counts:
-        # ORMの結果はタプルまたは属性アクセス
-        totals[status] = count
-
-    totals["合計"] = sum(totals.values())
-    return totals
+            totals["合計"] = sum(totals.values())
+            return totals
+    except Exception as e:
+        app.logger.error(f"Error fetching attendance totals: {e}")
+        return None
 
 def export_csv_to_memory(start_date: Optional[str] = None, end_date: Optional[str] = None,
                           学生番号: Optional[int] = None, 学科ID: Optional[int] = None) -> BytesIO:
@@ -3409,6 +3414,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
