@@ -611,6 +611,10 @@ def get_official_student(学生番号: int, 学科ID: int) -> Optional[str]:
 
 def fetch_attendance_totals(学生番号: int, 学科ID: int, start_date: str, end_date: str):
     """指定期間の出欠合計回数を集計します（ORM版）。"""
+    # start_date と end_date を datetime 型に変換
+    start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+
     # 出席状態ごとのカウントをDBで集計
     counts = db.session.query(
         入退室.出席状態,
@@ -618,7 +622,6 @@ def fetch_attendance_totals(学生番号: int, 学科ID: int, start_date: str, e
     ).filter(
         入退室.学生番号 == 学生番号,
         入退室.学科ID == 学科ID,
-        入退室.入室区分 == '入室',
         # PostgreSQLのDATE型キャストと期間指定
         func.cast(入退室.入退出時間, Date) >= start_date,
         func.cast(入退室.入退出時間, Date) <= end_date,
@@ -1166,13 +1169,12 @@ def get_conn():
     try:
         conn = psycopg2.connect(
             DATABASE_URL,
-            cursor_factory=RealDictCursor  # ← ★これが重要！
+            cursor_factory=RealDictCursor  # ← これが重要！
         )
         return conn
     except Exception as e:
         app.logger.error(f"Database connection error: {e}")
         raise
-
 
 def require_logs_auth(view_func):
     """ /logs 用の簡易パスワード認証 """
@@ -3407,6 +3409,7 @@ if __name__ == "__main__":
     print("ORMベースのFlask Webアプリを起動します。")
     print("Render環境では Procfile: `web: gunicorn main:app` を使ってください。")
     app.run(debug=True, host="0.0.0.0", port=port)
+
 
 
 
